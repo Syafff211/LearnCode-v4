@@ -1,0 +1,16 @@
+User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /auth/
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /settings
+Disallow: /learn/
+Disallow: /certificates/
+Disallow: /account-suspended
+
+Sitemap: https://learncode.web.id/sitemap.xml
