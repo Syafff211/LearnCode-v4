@@ -2,6 +2,10 @@ import { expect, test } from "@playwright/test";
 
 test.describe("public catalogue", () => {
   test("landing page explains the product without invented metrics", async ({ page }) => {
+    // Skip the intro clip so the assertions target the landing content itself.
+    await page.addInitScript(() =>
+      window.localStorage.setItem("learncode:intro-video", "seen"),
+    );
     await page.goto("/");
     await expect(
       page.getByRole("heading", {
@@ -46,6 +50,41 @@ test.describe("public catalogue", () => {
     await page.goto("/courses/css-fundamentals");
     const lessonLink = page.getByRole("link", { name: /Selektor, cascade/i }).first();
     await expect(lessonLink).toHaveAttribute("href", "/learn/css-selektor-cascade");
+  });
+});
+
+test.describe("landing intro video", () => {
+  test("the intro opens on a first visit and can be skipped", async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.removeItem("learncode:intro-video"));
+    await page.goto("/");
+
+    const intro = page.getByRole("dialog", { name: /Video intro LearnCode/i });
+    await expect(intro).toBeVisible();
+
+    await page.getByRole("button", { name: /Lewati intro/i }).click();
+    await expect(intro).toHaveCount(0);
+
+    // Skipping remembers the visit, so a reload goes straight to the content.
+    await expect
+      .poll(() => page.evaluate(() => window.localStorage.getItem("learncode:intro-video")))
+      .toBe("seen");
+
+    await page.reload();
+    await expect(intro).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /Belajar coding dengan membangun sesuatu/i }),
+    ).toBeVisible();
+  });
+
+  test("the intro can be replayed from the landing hero", async ({ page }) => {
+    await page.addInitScript(() =>
+      window.localStorage.setItem("learncode:intro-video", "seen"),
+    );
+    await page.goto("/");
+
+    await expect(page.getByRole("dialog", { name: /Video intro LearnCode/i })).toHaveCount(0);
+    await page.getByRole("button", { name: /Putar intro/i }).click();
+    await expect(page.getByRole("dialog", { name: /Video intro LearnCode/i })).toBeVisible();
   });
 });
 

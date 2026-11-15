@@ -4,9 +4,11 @@ import { ArrowRight, BookOpen, CheckCircle2, Code2, Play, Sparkles } from "lucid
 import type { Metadata } from "next";
 
 import { CourseCard } from "@/components/marketing/course-card";
+import { IntroReplayButton, LandingIntroVideo } from "@/components/marketing/intro-video";
 import { JsonLd } from "@/components/seo/json-ld";
 import { Button } from "@/components/ui/button";
 import { getCatalogCourses } from "@/lib/data/courses";
+import { resolveIntroVideoSource } from "@/lib/intro-video";
 import { canonicalUrl } from "@/lib/seo";
 
 export const dynamic = "force-dynamic";
@@ -58,6 +60,8 @@ const previewDocument = `<!doctype html>
 export default async function LandingPage() {
   const courses = await getCatalogCourses();
   const featured = courses.slice(0, 3);
+  // Optional: NEXT_PUBLIC_INTRO_VIDEO_URL overrides the bundled public/intro.mp4.
+  const introSrc = resolveIntroVideoSource(process.env.NEXT_PUBLIC_INTRO_VIDEO_URL);
 
   return (
     <>
@@ -102,6 +106,11 @@ export default async function LandingPage() {
                 <Link href="#kursus">Lihat kursus</Link>
               </Button>
             </div>
+            {introSrc ? (
+              <div className="mt-4">
+                <IntroReplayButton />
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-[8px] border border-line bg-surface p-5 sm:p-6">
@@ -204,6 +213,7 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      {introSrc ? <LandingIntroVideo src={introSrc} /> : null}
     </>
   );
 }
