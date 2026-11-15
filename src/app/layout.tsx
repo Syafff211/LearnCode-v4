@@ -1,3 +1,4 @@
+
 import type { Metadata, Viewport } from "next";
 import { cookies } from "next/headers";
 
@@ -16,8 +17,15 @@ const defaultTitle = "LearnCode — Belajar Coding dengan Praktik dan AI";
 
 export async function generateMetadata(): Promise<Metadata> {
   const platform = await getPlatformSettings();
+
   return {
     metadataBase: new URL(SITE_ORIGIN),
+
+    // Google AdSense verification
+    other: {
+      "google-adsense-account": "ca-pub-8284119343036991",
+    },
+
     title: {
       default: defaultTitle,
       template: `%s | ${SITE_NAME}`,
@@ -79,9 +87,14 @@ const themeScript = `
 })();
 `;
 
-export default async function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const cookieStore = await cookies();
   const cookieTheme = cookieStore.get("learncode-theme")?.value;
+
   const initialTheme: ThemePreference =
     cookieTheme === "light" || cookieTheme === "dark" || cookieTheme === "system"
       ? cookieTheme
@@ -97,12 +110,15 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
+
       <body className="min-h-dvh bg-canvas text-ink antialiased">
         <ThemeProvider initialTheme={initialTheme}>
           <a href="#main-content" className="skip-link">
             Lewati ke konten utama
           </a>
+
           {children}
+
           <PromotionPopup />
           <AppToaster />
         </ThemeProvider>
