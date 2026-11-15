@@ -1,8 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
-import { ArrowRight, Play, RotateCcw, SkipForward, Volume2, VolumeX } from "lucide-react";
+import { Play, SkipForward, Volume2, VolumeX } from "lucide-react";
 
 import { LogoMark } from "@/components/logo";
 import { Button } from "@/components/ui/button";
@@ -17,7 +16,7 @@ import {
 } from "@/lib/intro-video";
 import { cn } from "@/lib/utils";
 
-type IntroState = "hidden" | "playing" | "ended";
+type IntroState = "hidden" | "playing";
 
 function prefersReducedMotion(): boolean {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
@@ -44,10 +43,10 @@ function rememberSeen() {
 /**
  * Full-screen intro clip for the landing page.
  *
- * Autoplay only works muted, so the video starts silent with an un-mute
- * control. If the file is missing, blocked by the browser, or fails to decode,
- * the overlay closes itself and the landing page is usable as usual — an intro
- * must never be able to hold the page hostage.
+ * Starts with sound when the browser allows audible autoplay. Browsers that
+ * block it fall back to muted playback with an un-mute control. If the file is
+ * missing or fails to decode, the overlay closes itself; the intro must never
+ * hold the landing page hostage.
  */
 export function LandingIntroVideo({
   src = DEFAULT_INTRO_VIDEO_SRC,
@@ -58,7 +57,7 @@ export function LandingIntroVideo({
 }) {
   const [state, setState] = React.useState<IntroState>("hidden");
   const [playing, setPlaying] = React.useState(false);
-  const [muted, setMuted] = React.useState(true);
+  const [muted, setMuted] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
   const [closing, setClosing] = React.useState(false);
 
@@ -103,12 +102,35 @@ export function LandingIntroVideo({
   // Replay control dispatched from the landing hero.
   React.useEffect(() => {
     const replay = () => {
-      setMuted(true);
+      setMuted(false);
       open(false);
     };
     window.addEventListener(INTRO_VIDEO_REPLAY_EVENT, replay);
     return () => window.removeEventListener(INTRO_VIDEO_REPLAY_EVENT, replay);
   }, [open]);
+
+  // Try audible autoplay first. Browsers that reject it still allow muted
+  // autoplay, so fall back to that and keep the sound toggle available.
+  React.useEffect(() => {
+    if (state !== "playing") return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    let cancelled = false;
+    video.muted = false;
+    void video.play().catch(() => {
+      if (cancelled || !openRef.current) return;
+      video.muted = true;
+      setMuted(true);
+      void video.play().catch(() => {
+        // If autoplay is entirely blocked, the manual play control remains.
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state]);
 
   // While open: lock scrolling, allow Escape, and move focus into the dialog.
   React.useEffect(() => {
@@ -186,11 +208,7 @@ export function LandingIntroVideo({
             onPlay={() => setPlaying(true)}
             onPause={() => setPlaying(false)}
             onTimeUpdate={handleTimeUpdate}
-            onEnded={() => {
-              setPlaying(false);
-              setProgress(1);
-              setState("ended");
-            }}
+            onEnded={close}
             // A missing or undecodable file must not block the landing page.
             onError={close}
             className="intro-video-media"
@@ -208,30 +226,6 @@ export function LandingIntroVideo({
             </button>
           ) : null}
 
-          {state === "ended" ? (
-            <div className="intro-video-endcard">
-              <p className="intro-video-eyebrow">LearnCode</p>
-              <p className="intro-video-title">Belajar coding dengan membangun sesuatu.</p>
-              <div className="intro-video-actions">
-                <Button asChild size="lg">
-                  <Link href="/register">
-                    Mulai belajar
-                    <ArrowRight aria-hidden="true" />
-                  </Link>
-                </Button>
-                <Button
-                  type="button"
-                  size="lg"
-                  variant="secondary"
-                  className="border-[rgb(241_238_229/0.22)] bg-[rgb(241_238_229/0.08)] text-[#f1eee5] hover:bg-[rgb(241_238_229/0.16)]"
-                  onClick={() => open(false)}
-                >
-                  <RotateCcw aria-hidden="true" />
-                  Putar ulang
-                </Button>
-              </div>
-            </div>
-          ) : null}
         </div>
 
         <div className="intro-video-footer">
