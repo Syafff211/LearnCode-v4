@@ -732,10 +732,8 @@ button {
   position: fixed;
   inset: 0;
   z-index: 90;
-  display: grid;
-  place-items: center;
-  padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom));
-  background: rgb(10 11 9 / 0.95);
+  overflow: hidden;
+  background: #0a0b09;
   animation: intro-video-fade-in 220ms ease-out both;
 }
 
@@ -744,13 +742,18 @@ button {
 }
 
 .intro-video-shell {
-  display: flex;
-  width: min(100%, 62rem);
-  flex-direction: column;
-  gap: 0.875rem;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  height: 100dvh;
 }
 
 .intro-video-topbar {
+  position: absolute;
+  z-index: 3;
+  top: max(1rem, env(safe-area-inset-top));
+  right: max(1rem, env(safe-area-inset-right));
+  left: max(1rem, env(safe-area-inset-left));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -782,14 +785,11 @@ button {
 }
 
 .intro-video-frame {
-  position: relative;
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
   overflow: hidden;
-  aspect-ratio: 16 / 9;
-  max-height: calc(100dvh - 9rem);
-  border: 1px solid rgb(241 238 229 / 0.14);
-  border-radius: var(--radius-lg);
   background: #0b0c0a;
 }
 
@@ -797,7 +797,7 @@ button {
   width: 100%;
   height: 100%;
   background: #0b0c0a;
-  object-fit: contain;
+  object-fit: cover;
 }
 
 .intro-video-play {
@@ -820,6 +820,7 @@ button {
 
 .intro-video-endcard {
   position: absolute;
+  z-index: 2;
   inset: 0;
   display: grid;
   place-content: center;
@@ -860,6 +861,11 @@ button {
 }
 
 .intro-video-footer {
+  position: absolute;
+  z-index: 3;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  left: max(1rem, env(safe-area-inset-left));
   display: flex;
   align-items: center;
   gap: 1rem;
