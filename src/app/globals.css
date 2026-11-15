@@ -797,7 +797,8 @@ button {
   width: 100%;
   height: 100%;
   background: #0b0c0a;
-  object-fit: cover;
+  /* Preserve the entire 16:9 clip; portrait screens get letterboxing, not a crop. */
+  object-fit: contain;
 }
 
 .intro-video-play {

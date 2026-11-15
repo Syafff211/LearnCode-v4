@@ -49,9 +49,11 @@ The MasterCode promotion is an in-memory dialog shown once per full document loa
 
 ### Landing intro video
 
-The landing page plays `public/intro.mp4` as a full-screen clip on a visitor's
-first visit, trying autoplay with sound first. If the browser blocks audible
-autoplay, playback falls back to muted with a sound toggle. The overlay closes
+The landing page opens a full-viewport intro overlay on a visitor's first
+visit. The 16:9 video keeps its complete frame (`object-fit: contain`), so on a
+portrait phone it appears centered with dark bars rather than cropping the
+sides. Playback tries autoplay with sound first; if the browser blocks audible
+autoplay, it falls back to muted with a sound toggle. The overlay closes
 automatically when the clip ends; it can also be skipped with a button or
 `Escape`. The visit is remembered in `localStorage` under
 `learncode:intro-video`, so the clip does not replay on later loads; the
