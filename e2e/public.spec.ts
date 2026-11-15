@@ -76,6 +76,16 @@ test.describe("landing intro video", () => {
     ).toBeVisible();
   });
 
+  test("the intro closes automatically when the clip ends", async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.removeItem("learncode:intro-video"));
+    await page.goto("/");
+
+    const intro = page.getByRole("dialog", { name: /Video intro LearnCode/i });
+    await expect(intro).toBeVisible();
+    await page.locator("video").dispatchEvent("ended");
+    await expect(intro).toHaveCount(0);
+  });
+
   test("the intro can be replayed from the landing hero", async ({ page }) => {
     await page.addInitScript(() =>
       window.localStorage.setItem("learncode:intro-video", "seen"),
