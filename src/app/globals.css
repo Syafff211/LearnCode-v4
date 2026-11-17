@@ -903,7 +903,6 @@ button {
     pointer-events: auto;
   }
 }
-
 .blog-toc a {
   color: var(--lc-muted);
   text-decoration: none;
