@@ -3,10 +3,11 @@
 import * as React from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ArrowDown, Check, Copy, RotateCcw, Sparkles } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Check, Copy, RotateCcw, Sparkles } from "lucide-react";
 
 import { LoadingIndicator } from "@/components/loading-screen";
 import { Button } from "@/components/ui/button";
+import { TUTOR_QUICK_REPLIES } from "@/lib/ai/tutor-ui";
 import { cn } from "@/lib/utils";
 import type { TutorError, TutorMessage } from "@/components/ai/tutor-chat-types";
 
@@ -26,10 +27,23 @@ function textFromNode(node: React.ReactNode): string {
   return "";
 }
 
-function CopyCodeButton({ children }: { children: React.ReactNode }) {
+function extractCodeLanguage(node: React.ReactNode): string {
+  const arr = Array.isArray(node) ? node : [node];
+  for (const child of arr) {
+    if (React.isValidElement<{ className?: string }>(child)) {
+      const className = child.props.className ?? "";
+      const match = /language-([a-z0-9_-]+)/i.exec(className);
+      if (match?.[1]) return match[1].toUpperCase();
+    }
+  }
+  return "Kode";
+}
+
+function CopyCodeBlock({ children }: { children: React.ReactNode }) {
   const [copied, setCopied] = React.useState(false);
   const timerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const value = textFromNode(children);
+  const langLabel = extractCodeLanguage(children);
 
   React.useEffect(() => () => {
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -47,20 +61,27 @@ function CopyCodeButton({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-[6px] border border-line bg-[var(--lc-code-bg)]">
+    <div className="my-3 max-w-full overflow-hidden rounded-[8px] border border-line bg-[var(--lc-code-bg)]">
       <div className="flex items-center justify-between gap-3 border-b border-line px-3 py-1.5">
-        <span className="font-mono text-[9px] uppercase tracking-[0.08em] text-muted">Kode</span>
+        <span className="font-mono text-xs uppercase tracking-[0.06em] text-muted">
+          {langLabel}
+        </span>
         <button
           type="button"
           onClick={() => void copy()}
+          title={copied ? "Kode tersalin" : "Salin blok kode"}
           aria-label={copied ? "Kode tersalin" : "Salin blok kode"}
-          className="inline-flex items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-[10px] text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none"
+          className="inline-flex min-h-8 items-center gap-1.5 rounded-[4px] px-2 py-1 text-xs font-medium text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none"
         >
-          {copied ? <Check className="size-3" aria-hidden="true" /> : <Copy className="size-3" aria-hidden="true" />}
-          {copied ? "Tersalin" : "Salin kode"}
+          {copied ? (
+            <Check className="size-3.5 text-ok" aria-hidden="true" />
+          ) : (
+            <Copy className="size-3.5" aria-hidden="true" />
+          )}
+          <span>{copied ? "Tersalin" : "Salin kode"}</span>
         </button>
       </div>
-      <pre className="m-0 max-w-full overflow-x-auto p-3 font-mono text-[12px] leading-relaxed">
+      <pre className="m-0 max-w-full overflow-x-auto p-3.5 font-mono text-[13px] leading-relaxed">
         {children}
       </pre>
     </div>
@@ -69,7 +90,7 @@ function CopyCodeButton({ children }: { children: React.ReactNode }) {
 
 function MessageContent({ content }: { content: string }) {
   return (
-    <div className="chat-prose">
+    <div className="chat-prose min-w-0 max-w-full">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         urlTransform={safeMarkdownUrl}
@@ -84,11 +105,16 @@ function MessageContent({ content }: { content: string }) {
             );
           },
           img: ({ alt }) => (
-            <span className="rounded border border-line px-1.5 py-0.5 text-[10px] text-muted">
+            <span className="inline-block rounded border border-line px-2 py-0.5 text-xs text-muted">
               Gambar tidak dimuat{alt ? `: ${alt}` : ""}
             </span>
           ),
-          pre: ({ children }) => <CopyCodeButton>{children}</CopyCodeButton>,
+          pre: ({ children }) => <CopyCodeBlock>{children}</CopyCodeBlock>,
+          table: ({ children }) => (
+            <div className="my-3 max-w-full overflow-x-auto rounded-[6px] border border-line">
+              <table>{children}</table>
+            </div>
+          ),
         }}
       >
         {content}
@@ -107,20 +133,22 @@ export function TutorMessageList({
   loading,
   copiedId,
   forceScrollVersion,
+  canQuickReply,
   onCopy,
   onRetry,
   onDismissError,
-  onSuggestion,
+  onQuickReply,
 }: {
   messages: TutorMessage[];
   error: TutorError | null;
   loading: boolean;
   copiedId: string | null;
   forceScrollVersion: number;
+  canQuickReply: boolean;
   onCopy: (message: TutorMessage) => void;
   onRetry: () => void;
   onDismissError: () => void;
-  onSuggestion: (value: string) => void;
+  onQuickReply: (value: string) => void;
 }) {
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const atBottomRef = React.useRef(true);
@@ -138,8 +166,6 @@ export function TutorMessageList({
       atBottomRef.current = true;
       setShowLatest(false);
     } else if (atBottomRef.current) {
-      // Token-by-token stream updates follow only while the learner is already
-      // at the latest response; reading older messages never yanks the scroll.
       node.scrollTop = node.scrollHeight;
     }
   }, [messages, error, forceScrollVersion]);
@@ -147,20 +173,11 @@ export function TutorMessageList({
   function handleScroll() {
     const node = scrollRef.current;
     if (!node) return;
-    const atBottom = node.scrollHeight - node.scrollTop - node.clientHeight < 88;
+    const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+    const atBottom = distanceFromBottom < 120;
     atBottomRef.current = atBottom;
     setShowLatest(!atBottom && messages.length > 0);
   }
-
-  async function copyMessage(message: TutorMessage) {
-    await onCopy(message);
-  }
-
-  const suggestions = [
-    "Apa perbedaan Flexbox dan Grid?",
-    "Jelaskan box model dengan contoh.",
-    "Bantu saya memahami error JavaScript ini.",
-  ];
 
   return (
     <div className="relative min-h-0 flex-1">
@@ -171,32 +188,39 @@ export function TutorMessageList({
         aria-live="polite"
         aria-relevant="additions"
         aria-label="Percakapan dengan LearnCode AI"
-        className="h-full min-h-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6"
+        className="h-full min-h-0 overflow-y-auto overscroll-contain px-3 py-5 sm:px-6"
       >
         {loading ? (
-          <div className="mx-auto flex max-w-xl items-center rounded-[6px] border border-line bg-surface px-3 py-2">
-            <LoadingIndicator label="Memuat percakapan…" />
+          <div className="mx-auto mb-4 flex max-w-[50rem] items-center rounded-[8px] border border-line bg-surface px-4 py-3">
+            <LoadingIndicator label="Memuat riwayat percakapan…" />
           </div>
         ) : null}
 
         {messages.length === 0 && !loading ? (
-          <div className="mx-auto flex min-h-full max-w-2xl flex-col items-center justify-center py-8 text-center">
-            <span className="flex size-10 items-center justify-center rounded-full border border-line bg-surface">
-              <Sparkles className="size-4 text-accent-text" aria-hidden="true" />
+          <div className="mx-auto flex min-h-full max-w-[40rem] flex-col items-center justify-center py-6 text-center sm:py-10">
+            <span className="flex size-11 items-center justify-center rounded-full border border-line bg-surface shadow-xs">
+              <Sparkles className="size-5 text-accent-text" aria-hidden="true" />
             </span>
-            <h2 className="mt-4 font-display text-xl font-semibold text-ink">Apa yang ingin kamu pahami?</h2>
-            <p className="mt-2 max-w-md text-sm leading-relaxed text-muted">
-              Tanya tentang kode, tempel error, atau minta hint untuk latihan. AI Tutor tidak menjalankan kode.
+            <h2 className="mt-4 font-display text-2xl font-semibold tracking-tight text-ink sm:text-[1.65rem]">
+              Apa yang ingin kamu pelajari hari ini?
+            </h2>
+            <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted sm:text-[15px]">
+              Tanyakan sesuatu, pahami kode, atau pelajari pemrograman bersama AI Tutor.
             </p>
-            <div className="mt-5 flex max-w-xl flex-wrap justify-center gap-2">
-              {suggestions.map((suggestion) => (
+            <div className="mt-6 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2">
+              {TUTOR_QUICK_REPLIES.map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
-                  onClick={() => onSuggestion(suggestion)}
-                  className="rounded-full border border-line bg-surface px-3 py-1.5 text-xs text-ink-soft transition-colors hover:border-line-strong hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none"
+                  disabled={!canQuickReply}
+                  onClick={() => onQuickReply(suggestion)}
+                  className="group flex min-h-[44px] items-center justify-between gap-2 rounded-[10px] border border-line bg-surface px-3.5 py-2.5 text-left text-sm font-medium text-ink-soft transition-colors hover:border-accent/50 hover:bg-surface-2/60 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text disabled:cursor-not-allowed disabled:opacity-55 motion-reduce:transition-none"
                 >
-                  {suggestion}
+                  <span className="leading-snug">{suggestion}</span>
+                  <ArrowUpRight
+                    className="size-4 shrink-0 text-muted transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-accent-text motion-reduce:transition-none"
+                    aria-hidden="true"
+                  />
                 </button>
               ))}
             </div>
@@ -204,65 +228,123 @@ export function TutorMessageList({
         ) : null}
 
         {messages.length > 0 ? (
-          <ol className="mx-auto flex max-w-4xl flex-col gap-5 pb-10">
-            {messages.map((message) => (
-              <li
-                key={message.id}
-                className={cn("flex flex-col", message.role === "user" ? "items-end" : "items-start")}
-              >
-                <span className="mb-1.5 px-1 font-mono text-[9px] uppercase tracking-[0.08em] text-muted">
-                  {message.role === "user" ? "Kamu" : "LearnCode AI"}
-                </span>
-                <div
-                  className={cn(
-                    "max-w-[min(88ch,96%)] rounded-[8px] border px-3.5 py-3 sm:px-4",
-                    message.role === "user"
-                      ? "border-line bg-surface-2"
-                      : "border-line bg-surface",
-                  )}
-                >
-                  {message.content ? (
-                    <MessageContent content={message.content} />
-                  ) : message.streaming ? (
-                    <span className="flex items-center gap-1.5 py-1 text-xs text-muted" role="status">
-                      <span className="size-1.5 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
-                      <span className="size-1.5 animate-pulse rounded-full bg-accent [animation-delay:150ms] motion-reduce:animate-none" />
-                      <span className="size-1.5 animate-pulse rounded-full bg-accent [animation-delay:300ms] motion-reduce:animate-none" />
-                      <span className="sr-only">AI sedang menulis jawaban</span>
-                    </span>
-                  ) : null}
-                  {message.streaming && message.content ? (
-                    <span className="mt-1 inline-block h-3.5 w-[2px] animate-pulse bg-accent align-middle motion-reduce:animate-none" aria-hidden="true" />
-                  ) : null}
-                  {message.stopped ? (
-                    <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.06em] text-muted">Respons dihentikan</p>
-                  ) : null}
-                  {message.failed ? (
-                    <p className="mt-2 font-mono text-[9px] uppercase tracking-[0.06em] text-danger">Pesan belum terkirim · coba lagi di bawah</p>
-                  ) : null}
-                  {message.content && !message.streaming ? (
-                    <div className="mt-2 flex items-center gap-2 border-t border-line pt-1.5">
+          <ol className="mx-auto flex max-w-[50rem] flex-col gap-6 pb-16">
+            {messages.map((message) => {
+              const isUser = message.role === "user";
+              const isCopied = copiedId === message.id;
+              const copyLabel = isCopied
+                ? "Pesan tersalin"
+                : isUser
+                  ? "Salin pesan kamu"
+                  : "Salin jawaban AI Tutor";
+
+              if (isUser) {
+                return (
+                  <li key={message.id} className="group flex flex-col items-end">
+                    <div className="mb-1 flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() => void copyMessage(message)}
-                        aria-label={copiedId === message.id ? "Pesan tersalin" : `Salin pesan ${message.role === "user" ? "kamu" : "AI Tutor"}`}
-                        className="inline-flex items-center gap-1 rounded-[3px] px-1.5 py-0.5 text-[10px] text-muted transition-colors hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none"
+                        onClick={() => onCopy(message)}
+                        title={isCopied ? "Tersalin" : "Salin pesan"}
+                        aria-label={copyLabel}
+                        className={cn(
+                          "inline-flex size-10 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
+                          isCopied
+                            ? "opacity-100 text-ok"
+                            : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
+                        )}
                       >
-                        {copiedId === message.id ? <Check className="size-3" aria-hidden="true" /> : <Copy className="size-3" aria-hidden="true" />}
-                        {copiedId === message.id ? "Tersalin" : "Salin"}
+                        {isCopied ? (
+                          <Check className="size-4" aria-hidden="true" />
+                        ) : (
+                          <Copy className="size-4" aria-hidden="true" />
+                        )}
                       </button>
+                      <span className="shrink-0 whitespace-nowrap text-xs font-semibold tracking-[0.04em] text-ink-soft">
+                        Kamu
+                      </span>
                     </div>
-                  ) : null}
-                </div>
-              </li>
-            ))}
+                    <div className="min-w-0 max-w-[min(42rem,92%)] rounded-[12px] border border-line bg-surface-2 px-4 py-3 text-[15px] leading-[1.65] text-ink">
+                      <MessageContent content={message.content} />
+                      {message.failed ? (
+                        <p className="mt-2 text-xs font-medium text-danger">
+                          Pesan belum terkirim · coba kirim ulang di bawah
+                        </p>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              }
+
+              return (
+                <li key={message.id} className="group flex flex-col items-start">
+                  <div className="mb-1.5 flex w-full items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent-text">
+                      <Sparkles className="size-3.5 shrink-0" aria-hidden="true" />
+                      <span>LearnCode AI</span>
+                    </span>
+                    {message.content && !message.streaming ? (
+                      <button
+                        type="button"
+                        onClick={() => onCopy(message)}
+                        title={isCopied ? "Tersalin" : "Salin pesan"}
+                        aria-label={copyLabel}
+                        className={cn(
+                          "inline-flex size-10 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
+                          isCopied
+                            ? "opacity-100 text-ok"
+                            : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
+                        )}
+                      >
+                        {isCopied ? (
+                          <Check className="size-4" aria-hidden="true" />
+                        ) : (
+                          <Copy className="size-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="w-full min-w-0 border-l-2 border-accent/25 pl-3.5 sm:pl-4">
+                    {message.content ? (
+                      <MessageContent content={message.content} />
+                    ) : message.streaming ? (
+                      <div
+                        className="inline-flex items-center gap-2 py-1 text-sm text-muted"
+                        role="status"
+                      >
+                        <span className="flex items-center gap-1" aria-hidden="true">
+                          <span className="size-1.5 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
+                          <span className="size-1.5 animate-pulse rounded-full bg-accent [animation-delay:150ms] motion-reduce:animate-none" />
+                          <span className="size-1.5 animate-pulse rounded-full bg-accent [animation-delay:300ms] motion-reduce:animate-none" />
+                        </span>
+                        <span>AI Tutor sedang menyusun jawaban…</span>
+                      </div>
+                    ) : null}
+                    {message.streaming && message.content ? (
+                      <span
+                        className="mt-1 inline-block h-4 w-[2px] animate-pulse bg-accent align-middle motion-reduce:animate-none"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                    {message.stopped ? (
+                      <p className="mt-2 text-xs font-medium text-muted">
+                        Respons dihentikan oleh pengguna.
+                      </p>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })}
           </ol>
         ) : null}
 
         {error ? (
-          <div role="alert" className="mx-auto mt-2 max-w-4xl rounded-[7px] border border-danger/30 bg-danger-soft px-3.5 py-3 text-sm text-ink-soft">
+          <div
+            role="alert"
+            className="mx-auto mt-3 max-w-[50rem] rounded-[8px] border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-ink"
+          >
             <p>{error.message}</p>
-            <div className="mt-2 flex items-center gap-2">
+            <div className="mt-2.5 flex flex-wrap items-center gap-2">
               {error.retryable ? (
                 <Button type="button" size="sm" variant="secondary" onClick={onRetry}>
                   <RotateCcw aria-hidden="true" />
@@ -272,7 +354,7 @@ export function TutorMessageList({
               <button
                 type="button"
                 onClick={onDismissError}
-                className="rounded-[3px] px-2 py-1 text-xs text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
+                className="min-h-8 rounded-[5px] px-2.5 py-1 text-xs font-medium text-muted hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
               >
                 Tutup
               </button>
@@ -286,7 +368,8 @@ export function TutorMessageList({
           type="button"
           size="sm"
           variant="secondary"
-          className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2 shadow-sm"
+          aria-label="Gulir ke pesan terbaru"
+          className="absolute bottom-4 right-4 z-10 h-9 rounded-full border-line-strong bg-surface/95 px-3.5 shadow-md backdrop-blur-xs sm:right-6"
           onClick={() => {
             const node = scrollRef.current;
             if (!node) return;
@@ -295,8 +378,8 @@ export function TutorMessageList({
             setShowLatest(false);
           }}
         >
-          <ArrowDown aria-hidden="true" />
-          Pesan terbaru
+          <ArrowDown className="size-3.5" aria-hidden="true" />
+          <span>Pesan terbaru</span>
         </Button>
       ) : null}
 

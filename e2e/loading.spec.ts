@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-test.describe("loading screen integration", () => {
-  test("does not block landing content once loaded and introduces no hydration warnings", async ({
+test.describe("global loading screen integration", () => {
+  test("does not block initial landing render and introduces no hydration warnings", async ({
     page,
   }) => {
     const consoleErrors: string[] = [];
@@ -21,7 +21,6 @@ test.describe("loading screen integration", () => {
       }),
     ).toBeVisible();
 
-    // Content is already ready, so the full-screen loading overlay stays hidden.
     await expect(page.locator('[data-loading-screen="true"]')).toHaveCount(0);
 
     const hydrationErrors = consoleErrors.filter((text) =>
@@ -30,60 +29,56 @@ test.describe("loading screen integration", () => {
     expect(hydrationErrors).toEqual([]);
   });
 
-  test("falls back from loading.mp4 to loading.gif and stays centered on #FAF9F5 without visible text", async ({
+  test("shows centered /loading.gif on route navigation and dismisses cleanly when ready", async ({
     page,
   }) => {
-    const tinyGif = Buffer.from(
-      "R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==",
-      "base64",
-    );
-
-    await page.route("**/loading.mp4", (route) =>
-      route.fulfill({ status: 404, body: "Not found" }),
-    );
-    await page.route("**/loading.gif", (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: "image/gif",
-        body: tinyGif,
-      }),
-    );
-
     await page.addInitScript(() =>
       window.localStorage.setItem("learncode:intro-video", "seen"),
     );
     await page.goto("/");
 
-    // Simulate a slower client-side page transition (>150ms anti-flicker delay).
-    await page.route("**/courses*", async (route) => {
+    await page.route("**/blog*", async (route) => {
       await new Promise((resolve) => setTimeout(resolve, 450));
       await route.continue();
     });
 
-    await page.getByRole("link", { name: /^Courses$/i }).first().click();
+    await page.getByRole("link", { name: /^Blog$/i }).first().click();
 
     const loadingScreen = page.locator('[data-loading-screen="true"]');
     await expect(loadingScreen).toBeVisible();
     await expect(loadingScreen).toHaveCSS("background-color", "rgb(250, 249, 245)");
     await expect(loadingScreen).toHaveText("");
     await expect(loadingScreen).toHaveAttribute("data-media-kind", "gif");
+    await expect(loadingScreen.locator('img[src="/loading.gif"]')).toHaveCount(1);
 
-    // Automatically disappears when the navigation finishes.
     await expect(
-      page.getByRole("heading", { level: 1, name: /fondasi/i }),
+      page.getByRole("heading", { level: 1, name: /Pahami konsep/i }),
     ).toBeVisible();
     await expect(loadingScreen).toHaveCount(0);
   });
 
-  test("respects prefers-reduced-motion and remains responsive on mobile", async ({
+  test("does not show loading on hash or query-only changes on the same route", async ({
     page,
   }) => {
-    await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.setViewportSize({ width: 390, height: 844 });
-
     await page.addInitScript(() =>
       window.localStorage.setItem("learncode:intro-video", "seen"),
     );
+    await page.goto("/");
+
+    await page.getByRole("link", { name: /Lihat materi/i }).first().click();
+    await expect(page.locator('[data-loading-screen="true"]')).toHaveCount(0);
+  });
+
+  test("follows dark mode theme, supports mobile 360px, and respects prefers-reduced-motion", async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.setViewportSize({ width: 360, height: 800 });
+
+    await page.addInitScript(() => {
+      window.localStorage.setItem("learncode:intro-video", "seen");
+      window.localStorage.setItem("learncode-theme", "dark");
+    });
     await page.goto("/");
 
     await page.route("**/courses*", async (route) => {
@@ -96,11 +91,33 @@ test.describe("loading screen integration", () => {
 
     const loadingScreen = page.locator('[data-loading-screen="true"]');
     await expect(loadingScreen).toBeVisible();
-    await expect(loadingScreen).toHaveCSS("background-color", "rgb(250, 249, 245)");
+    await expect(loadingScreen).toHaveCSS("background-color", "rgb(18, 19, 16)");
+    await expect(loadingScreen).toHaveAttribute("data-media-kind", "fallback");
+    await expect(loadingScreen).toHaveText("");
 
     await expect(
       page.getByRole("heading", { level: 1, name: /fondasi/i }),
     ).toBeVisible();
     await expect(loadingScreen).toHaveCount(0);
+  });
+
+  test("browser back navigation does not leave loading stuck", async ({ page }) => {
+    await page.addInitScript(() =>
+      window.localStorage.setItem("learncode:intro-video", "seen"),
+    );
+    await page.goto("/");
+    await page.getByRole("link", { name: /^Courses$/i }).first().click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: /fondasi/i }),
+    ).toBeVisible();
+
+    await page.goBack();
+    await expect(
+      page.getByRole("heading", {
+        level: 1,
+        name: /Belajar coding dengan membangun sesuatu/i,
+      }),
+    ).toBeVisible();
+    await expect(page.locator('[data-loading-screen="true"]')).toHaveCount(0);
   });
 });

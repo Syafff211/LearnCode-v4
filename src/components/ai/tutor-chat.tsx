@@ -14,11 +14,9 @@ import { toast } from "sonner";
 
 import { TutorComposer } from "@/components/ai/tutor-composer";
 import { TutorConversationSidebar } from "@/components/ai/tutor-conversation-sidebar";
-import {
-  TutorMessageList,
-} from "@/components/ai/tutor-message-list";
+import { TutorMessageList } from "@/components/ai/tutor-message-list";
 import { TutorModeToolbar } from "@/components/ai/tutor-mode-toolbar";
-import { useLoadingTask } from "@/components/loading-provider";
+import { TutorQuotaControl } from "@/components/ai/tutor-quota-control";
 import type {
   TutorConversation,
   TutorError,
@@ -31,10 +29,14 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { cn, truncate } from "@/lib/utils";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { deriveDescriptiveTitle } from "@/lib/ai/tutor-ui";
+import { cn } from "@/lib/utils";
 import type { AiAction } from "@/lib/validation/ai";
 
 export type { TutorConversation, TutorLessonOption } from "@/components/ai/tutor-chat-types";
@@ -136,8 +138,15 @@ export function TutorChat({
   const [conversationSearch, setConversationSearch] = React.useState("");
   const [historySearching, setHistorySearching] = React.useState(false);
   const [historyError, setHistoryError] = React.useState<string | null>(null);
+
+  const [renameTarget, setRenameTarget] = React.useState<TutorConversation | null>(null);
+  const [renameInput, setRenameInput] = React.useState("");
+  const [renameError, setRenameError] = React.useState<string | null>(null);
+  const [renaming, setRenaming] = React.useState(false);
+
   const [deleteTarget, setDeleteTarget] = React.useState<TutorConversation | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
   const [forceScrollVersion, setForceScrollVersion] = React.useState(0);
 
@@ -149,26 +158,21 @@ export function TutorChat({
   const inputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const lastPayloadRef = React.useRef<TutorPayload | null>(null);
   const lastInitialCodeRef = React.useRef(initialCode);
+  const manuallyRenamedIdsRef = React.useRef<Set<string>>(new Set());
 
   const remaining = Math.max(0, dailyLimit - used);
-  const awaitingAiResponse =
-    streaming && messages.some((entry) => entry.streaming && entry.content.length === 0);
   const visibleConversations = conversationSearch.trim()
     ? searchResults ?? []
     : allConversations;
 
-  useLoadingTask("ai-tutor", awaitingAiResponse);
-
-  React.useEffect(() => {
-    if (!awaitingAiResponse) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        abortRef.current?.abort();
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [awaitingAiResponse]);
+  const lessonTitleById = React.useMemo(() => {
+    const map = new Map<string, string>();
+    if (fixedLesson) map.set(fixedLesson.id, fixedLesson.title);
+    for (const option of lessonOptions) {
+      map.set(option.id, option.title);
+    }
+    return map;
+  }, [fixedLesson, lessonOptions]);
 
   React.useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
@@ -333,33 +337,59 @@ export function TutorChat({
     }
   }
 
-  async function renameConversation(id: string, title: string): Promise<boolean> {
-    if (streaming && activeId === id) {
-      toast.error("Hentikan respons sebelum mengubah percakapan yang sedang aktif.");
-      return false;
+  function openRenameDialog(conversation: TutorConversation) {
+    if (streaming && activeId === conversation.id) {
+      toast.error("Hentikan respons sebelum mengubah nama percakapan yang sedang aktif.");
+      return;
     }
+    setRenameTarget(conversation);
+    setRenameInput(conversation.title);
+    setRenameError(null);
+  }
+
+  async function submitRenameDialog(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!renameTarget || renaming) return;
+
+    const trimmed = renameInput.trim().slice(0, 80);
+    if (!trimmed) {
+      setRenameError("Judul percakapan tidak boleh kosong.");
+      return;
+    }
+    setRenameError(null);
+    setRenaming(true);
     try {
-      const response = await fetch(`/api/ai/conversations/${id}`, {
+      const response = await fetch(`/api/ai/conversations/${renameTarget.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",
-        body: JSON.stringify({ title: title.trim().slice(0, 80) }),
+        body: JSON.stringify({ title: trimmed }),
       });
       const payload = await response.json().catch(() => null);
       if (response.status === 401) {
         beginLoginRedirect();
-        return false;
+        return;
       }
       if (!response.ok || !payload?.conversation) {
         throw new Error(payload?.error?.message ?? "Judul percakapan belum bisa disimpan.");
       }
+      manuallyRenamedIdsRef.current.add(renameTarget.id);
       updateConversation(payload.conversation as TutorConversation);
+      setRenameTarget(null);
       toast.success("Judul percakapan diperbarui");
-      return true;
-    } catch (renameError) {
-      toast.error(renameError instanceof Error ? renameError.message : "Gagal mengubah nama percakapan.");
-      return false;
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : "Gagal mengubah nama percakapan.");
+    } finally {
+      setRenaming(false);
     }
+  }
+
+  function openDeleteDialog(conversation: TutorConversation) {
+    if (streaming && activeId === conversation.id) {
+      toast.error("Hentikan respons sebelum menghapus percakapan yang sedang aktif.");
+      return;
+    }
+    setDeleteTarget(conversation);
   }
 
   async function confirmDeleteConversation() {
@@ -441,15 +471,34 @@ export function TutorChat({
     setMessage((current) => (current.trim().length === 0 ? draft : current));
   }
 
-  async function send(retry = false) {
+  async function persistRefinedTitle(conversationId: string, refinedTitle: string) {
+    if (manuallyRenamedIdsRef.current.has(conversationId)) return;
+    try {
+      const response = await fetch(`/api/ai/conversations/${conversationId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ title: refinedTitle }),
+      });
+      if (!response.ok) return;
+      const payload = await response.json().catch(() => null);
+      if (payload?.conversation && !manuallyRenamedIdsRef.current.has(conversationId)) {
+        updateConversation(payload.conversation as TutorConversation);
+      }
+    } catch {
+      // Non-blocking: backend already saved initial title cleanly.
+    }
+  }
+
+  async function send(retry = false, messageOverride?: string) {
     if (streaming || !aiConfigured) return;
 
-    const previousDraft = message;
+    const previousDraft = messageOverride ?? message;
     let payload: TutorPayload;
     if (retry && lastPayloadRef.current) {
       payload = lastPayloadRef.current;
     } else {
-      const rawMessage = message.trim();
+      const rawMessage = (messageOverride ?? message).trim();
       const action = mode;
       const currentLessonId = lessonId;
       if (codeActions.has(action) && !code.trim()) {
@@ -458,7 +507,7 @@ export function TutorChat({
         return;
       }
       if (action === "explain_lesson" && !currentLessonId) {
-        setFormError("Pilih atau tambahkan konteks lesson terlebih dahulu.");
+        setFormError("Pilih konteks lesson terlebih dahulu.");
         return;
       }
       if (action === "free_chat" && !rawMessage) {
@@ -478,13 +527,15 @@ export function TutorChat({
 
       let effectiveMessage = rawMessage;
       if (action === "explain_lesson" && !effectiveMessage) {
-        effectiveMessage = language === "en"
-          ? "Explain the main idea of this lesson in simple terms, with a small example."
-          : "Jelaskan inti lesson ini dengan bahasa sederhana dan satu contoh kecil.";
+        effectiveMessage =
+          language === "en"
+            ? "Explain the main idea of this lesson in simple terms, with a small example."
+            : "Jelaskan inti lesson ini dengan bahasa sederhana dan satu contoh kecil.";
       } else if (action === "practice_suggestions" && !effectiveMessage) {
-        effectiveMessage = language === "en"
-          ? "Suggest three small practice tasks for my current level."
-          : "Berikan tiga saran latihan kecil yang sesuai dengan level saya.";
+        effectiveMessage =
+          language === "en"
+            ? "Suggest three small practice tasks for my current level."
+            : "Berikan tiga saran latihan kecil yang sesuai dengan level saya.";
       }
 
       payload = {
@@ -501,13 +552,20 @@ export function TutorChat({
     setError(null);
     lastPayloadRef.current = payload;
 
-    const lessonTitle = fixedLesson?.title ?? lessonOptions.find((entry) => entry.id === payload.lessonId)?.title;
-    const userContent = [
-      payload.message,
-      payload.code ? `\`\`\`${payload.codeLanguage}\n${payload.code}\n\`\`\`` : "",
-    ]
-      .filter(Boolean)
-      .join("\n\n") || (payload.action === "explain_lesson" ? `Jelaskan lesson ${lessonTitle ?? "ini"}.` : "Permintaan bantuan AI");
+    const lessonTitle =
+      fixedLesson?.title ??
+      lessonOptions.find((entry) => entry.id === payload.lessonId)?.title ??
+      null;
+    const userContent =
+      [
+        payload.message,
+        payload.code ? `\`\`\`${payload.codeLanguage}\n${payload.code}\n\`\`\`` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n") ||
+      (payload.action === "explain_lesson"
+        ? `Jelaskan lesson ${lessonTitle ?? "ini"}.`
+        : "Permintaan bantuan AI");
 
     const userId = retry ? lastUserMessageIdRef.current ?? newId() : newId();
     if (!retry) lastUserMessageIdRef.current = userId;
@@ -520,6 +578,7 @@ export function TutorChat({
     let streamedContent = "";
     let streamFailed = false;
     let streamDone = false;
+    let pendingTitleUpdate: { id: string; title: string } | null = null;
     const draftToRestore = previousDraft;
 
     function discardUnsavedNewConversation() {
@@ -547,7 +606,7 @@ export function TutorChat({
           streaming: true,
         },
       ]);
-      setMessage("");
+      if (!messageOverride) setMessage("");
     } else {
       if (message.trim() === payload.message.trim()) setMessage("");
       setMessages((current) => [
@@ -567,7 +626,7 @@ export function TutorChat({
     setStreaming(true);
 
     function restoreFailedTurn() {
-      restoreDraft(draftToRestore);
+      if (!messageOverride) restoreDraft(draftToRestore);
       setMessages((current) =>
         current
           .filter((entry) => entry.id !== assistantId || entry.content.length > 0)
@@ -599,10 +658,20 @@ export function TutorChat({
         if (parsed.conversationId) {
           conversationIdRef.current = parsed.conversationId;
           setActiveId(parsed.conversationId);
-          const title = parsed.title || truncate(payload.message || "Percakapan baru", 60);
+          const descriptiveTitle = deriveDescriptiveTitle({
+            rawTitle: parsed.title,
+            message: payload.message,
+            code: payload.code,
+            codeLanguage: payload.codeLanguage,
+            mode: payload.action,
+            lessonTitle,
+          });
+          if (!conversationAtStart && parsed.title !== descriptiveTitle) {
+            pendingTitleUpdate = { id: parsed.conversationId, title: descriptiveTitle };
+          }
           updateConversation({
             id: parsed.conversationId,
-            title,
+            title: descriptiveTitle,
             updated_at: new Date().toISOString(),
             lesson_id: payload.lessonId,
           });
@@ -636,13 +705,19 @@ export function TutorChat({
           if (streamedContent.length > 0) {
             setError({
               code: "persistence_failed",
-              message: "Jawaban selesai, tetapi riwayat percakapan tidak tersimpan. Salin jawaban sebelum meninggalkan halaman.",
+              message:
+                "Jawaban selesai, tetapi riwayat percakapan tidak tersimpan. Salin jawaban sebelum meninggalkan halaman.",
               retryable: false,
             });
           }
         } else if (completedId) {
-          const current = allConversations.find((entry) => entry.id === completedId);
-          if (current) updateConversation({ ...current, updated_at: new Date().toISOString() });
+          if (pendingTitleUpdate && pendingTitleUpdate.id === completedId) {
+            void persistRefinedTitle(completedId, pendingTitleUpdate.title);
+            pendingTitleUpdate = null;
+          } else {
+            const current = allConversations.find((entry) => entry.id === completedId);
+            if (current) updateConversation({ ...current, updated_at: new Date().toISOString() });
+          }
         }
       }
 
@@ -817,6 +892,26 @@ export function TutorChat({
     }
   }
 
+  function handleQuickReply(suggestion: string) {
+    if (streaming || !aiConfigured) return;
+    if (remaining <= 0) {
+      setFormError("Kuota AI harian sudah habis. Coba lagi besok.");
+      return;
+    }
+    if (codeActions.has(mode) && !code.trim()) {
+      setMessage(suggestion);
+      setShowCode(true);
+      setFormError("Lampirkan kode terlebih dahulu agar AI dapat menjalankan mode ini.");
+      return;
+    }
+    if (mode === "explain_lesson" && !lessonId) {
+      setMessage(suggestion);
+      setFormError("Pilih konteks lesson terlebih dahulu pada toolbar di atas.");
+      return;
+    }
+    void send(false, suggestion);
+  }
+
   async function copyMessage(entry: TutorMessage) {
     try {
       await navigator.clipboard.writeText(entry.content);
@@ -835,6 +930,7 @@ export function TutorChat({
   const sidebarProps = {
     conversations: visibleConversations,
     activeId,
+    lessonTitleById,
     search: conversationSearch,
     loading: historySearching,
     error: historyError,
@@ -847,90 +943,96 @@ export function TutorChat({
       void loadConversation(id);
     },
     onNew: onNewChat,
-    onRename: renameConversation,
-    onDelete: (conversation: TutorConversation) => {
-      if (streaming && activeId === conversation.id) {
-        toast.error("Hentikan respons sebelum menghapus percakapan yang sedang aktif.");
-        return;
-      }
-      setDeleteTarget(conversation);
-    },
+    onOpenRename: openRenameDialog,
+    onOpenDelete: openDeleteDialog,
   };
 
+  const showHeaderNewChat = embedded || !sidebarOpen;
+  const BrandHeading = embedded ? "p" : "h1";
+
   return (
-    <div className={cn("flex min-h-0 flex-col bg-canvas text-ink", embedded ? "h-full" : "h-full")}>
-      <header className="flex min-h-[3.75rem] shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-2.5 sm:px-4">
+    <div className="flex h-full min-h-0 flex-col bg-canvas text-ink">
+      <header className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-2.5 py-1.5 sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
           {!embedded ? (
             <>
               <button
                 type="button"
                 onClick={() => setSidebarOpen((open) => !open)}
-                aria-label={sidebarOpen ? "Sembunyikan riwayat" : "Tampilkan riwayat"}
+                aria-label={sidebarOpen ? "Sembunyikan riwayat percakapan" : "Tampilkan riwayat percakapan"}
                 aria-expanded={sidebarOpen}
-                className="hidden size-8 shrink-0 items-center justify-center rounded-[5px] text-muted hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text lg:inline-flex"
+                title={sidebarOpen ? "Sembunyikan sidebar" : "Tampilkan sidebar"}
+                className="hidden size-10 shrink-0 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text lg:inline-flex motion-reduce:transition-none"
               >
-                {sidebarOpen ? <PanelLeftClose className="size-4" aria-hidden="true" /> : <PanelLeftOpen className="size-4" aria-hidden="true" />}
+                {sidebarOpen ? (
+                  <PanelLeftClose className="size-4" aria-hidden="true" />
+                ) : (
+                  <PanelLeftOpen className="size-4" aria-hidden="true" />
+                )}
               </button>
               <button
                 type="button"
                 onClick={() => setHistoryOpen(true)}
                 aria-label="Buka riwayat percakapan"
-                className="inline-flex size-8 shrink-0 items-center justify-center rounded-[5px] text-muted hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text lg:hidden"
+                title="Riwayat percakapan"
+                className="inline-flex size-10 shrink-0 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text lg:hidden motion-reduce:transition-none"
               >
                 <History className="size-4" aria-hidden="true" />
               </button>
             </>
           ) : null}
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-[6px] bg-accent-soft">
+
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-[7px] bg-accent-soft">
             <Sparkles className="size-4 text-accent-text" aria-hidden="true" />
           </span>
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-ink">LearnCode AI</p>
-            <p className="hidden truncate text-[10px] text-muted sm:block">Asisten belajar coding</p>
+
+          <div className="flex min-w-0 items-center gap-2">
+            <BrandHeading className="truncate font-sans text-sm font-semibold text-ink">
+              LearnCode AI
+            </BrandHeading>
+            <span
+              className={cn(
+                "shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium",
+                embedded ? "hidden sm:inline-flex" : "inline-flex",
+                aiConfigured
+                  ? "border-accent/25 bg-accent-soft text-accent-text"
+                  : "border-highlight/30 bg-highlight-soft text-highlight",
+              )}
+              role="status"
+              title={aiConfigured ? `AI Tutor aktif · Model ${modelLabel}` : "Layanan AI tidak tersedia"}
+            >
+              <span
+                className={cn("size-1.5 rounded-full", aiConfigured ? "bg-ok" : "bg-highlight")}
+                aria-hidden="true"
+              />
+              <span>{aiConfigured ? "AI Tutor" : "Offline"}</span>
+            </span>
           </div>
-          <span
-            className={cn(
-              "ml-1 hidden shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[9px] sm:inline-flex",
-              aiConfigured ? "border-ok/25 bg-ok-soft text-ok" : "border-highlight/30 bg-highlight-soft text-highlight",
-            )}
-            role="status"
-            title={aiConfigured ? `Groq · ${modelLabel}` : "Layanan AI tidak tersedia"}
-          >
-            <span className={cn("size-1.5 rounded-full", aiConfigured ? "bg-ok" : "bg-highlight")} aria-hidden="true" />
-            {aiConfigured ? `Groq · ${modelLabel}` : "Tidak tersedia"}
-          </span>
-          <span
-            className={cn(
-              "ml-1 size-2 shrink-0 rounded-full sm:hidden",
-              aiConfigured ? "bg-ok" : "bg-highlight",
-            )}
-            role="status"
-            aria-label={aiConfigured ? `Groq aktif · ${modelLabel}` : "Layanan AI tidak tersedia"}
-            title={aiConfigured ? `Groq · ${modelLabel}` : "Layanan AI tidak tersedia"}
-          />
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <span className="hidden font-mono text-[10px] text-muted sm:inline" aria-label={`${remaining} dari ${dailyLimit} pesan AI tersisa hari ini`}>
-            {remaining}/{dailyLimit} pesan
-          </span>
-          <button
-            type="button"
-            onClick={onNewChat}
-            aria-label="Mulai percakapan baru"
-            title="Percakapan baru"
-            className="inline-flex h-8 items-center gap-1.5 rounded-[5px] px-2 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none"
-          >
-            <Plus className="size-4" aria-hidden="true" />
-            <span className="hidden sm:inline">Baru</span>
-          </button>
+          <TutorQuotaControl used={used} dailyLimit={dailyLimit} />
+
+          {showHeaderNewChat ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={onNewChat}
+              aria-label="Mulai percakapan baru"
+              className="h-10 px-2.5 sm:px-3"
+            >
+              <Plus aria-hidden="true" />
+              <span className="hidden sm:inline">Percakapan baru</span>
+            </Button>
+          ) : null}
+
           {onClose ? (
             <button
               type="button"
               onClick={onClose}
               aria-label="Tutup LearnCode AI"
-              className="inline-flex size-8 items-center justify-center rounded-[5px] text-muted hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
+              className="inline-flex size-10 items-center justify-center rounded-[6px] text-muted hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
             >
               <X className="size-4" aria-hidden="true" />
             </button>
@@ -940,12 +1042,15 @@ export function TutorChat({
 
       <div className="flex min-h-0 flex-1">
         {!embedded && sidebarOpen ? (
-          <aside className="hidden w-[17.5rem] shrink-0 border-r border-line lg:flex" aria-label="Riwayat percakapan">
+          <aside
+            className="hidden w-[17rem] shrink-0 border-r border-line lg:flex"
+            aria-label="Riwayat percakapan"
+          >
             <TutorConversationSidebar {...sidebarProps} idPrefix="desktop" />
           </aside>
         ) : null}
 
-        <main className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <TutorModeToolbar
             mode={mode}
             lessonId={lessonId}
@@ -966,14 +1071,11 @@ export function TutorChat({
             loading={loadingConversation}
             copiedId={copiedId}
             forceScrollVersion={forceScrollVersion}
+            canQuickReply={aiConfigured && remaining > 0 && !streaming}
             onCopy={copyMessage}
             onRetry={() => void send(true)}
             onDismissError={() => setError(null)}
-            onSuggestion={(value) => {
-              setMode("free_chat");
-              setMessage(value);
-              inputRef.current?.focus();
-            }}
+            onQuickReply={handleQuickReply}
           />
           <TutorComposer
             message={message}
@@ -986,7 +1088,7 @@ export function TutorChat({
             streaming={streaming}
             onStop={() => abortRef.current?.abort()}
             aiConfigured={aiConfigured}
-            remaining={remaining}
+            used={used}
             dailyLimit={dailyLimit}
             showCode={showCode}
             onToggleCode={() => setShowCode((current) => !current)}
@@ -1000,40 +1102,120 @@ export function TutorChat({
             inputRef={inputRef}
             formError={formError}
           />
-        </main>
+        </div>
       </div>
 
       {!embedded ? (
         <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
           <DialogContent
-            className="inset-y-0 left-0 h-dvh w-[min(88vw,22rem)] max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-y-0 border-l-0 p-0 sm:w-[22rem]"
+            className="inset-y-0 left-0 h-dvh w-[min(88vw,20rem)] max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-y-0 border-l-0 p-0 sm:w-[20rem]"
             hideClose
           >
             <DialogHeader className="sr-only">
               <DialogTitle>Riwayat percakapan</DialogTitle>
-              <DialogDescription>Cari, buka, ubah nama, atau hapus percakapan yang tersimpan.</DialogDescription>
+              <DialogDescription>
+                Cari, buka, ubah nama, atau hapus percakapan yang tersimpan.
+              </DialogDescription>
             </DialogHeader>
-            <TutorConversationSidebar {...sidebarProps} idPrefix="mobile" />
+            <TutorConversationSidebar
+              {...sidebarProps}
+              idPrefix="mobile"
+              onCloseDrawer={() => setHistoryOpen(false)}
+            />
           </DialogContent>
         </Dialog>
       ) : null}
 
-      <Dialog open={Boolean(deleteTarget)} onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}>
+      <Dialog
+        open={Boolean(renameTarget)}
+        onOpenChange={(open) => {
+          if (!open && !renaming) {
+            setRenameTarget(null);
+            setRenameError(null);
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Ubah nama percakapan</DialogTitle>
+            <DialogDescription>
+              Berikan judul singkat dan jelas agar percakapan ini mudah ditemukan nanti.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={(event) => void submitRenameDialog(event)} className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="rename-conversation-input">Judul percakapan</Label>
+              <Input
+                id="rename-conversation-input"
+                value={renameInput}
+                onChange={(event) => {
+                  setRenameInput(event.target.value.slice(0, 80));
+                  if (renameError) setRenameError(null);
+                }}
+                placeholder="Contoh: Memahami CSS Flexbox"
+                maxLength={80}
+                autoFocus
+                aria-invalid={Boolean(renameError)}
+              />
+              {renameError ? (
+                <p role="alert" className="text-xs font-medium text-danger">
+                  {renameError}
+                </p>
+              ) : (
+                <p className="text-xs text-muted">Maksimal 80 karakter.</p>
+              )}
+            </div>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => setRenameTarget(null)}
+                disabled={renaming}
+              >
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                loading={renaming}
+                disabled={renaming || !renameInput.trim()}
+              >
+                Simpan judul
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => !open && !deleting && setDeleteTarget(null)}
+      >
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Hapus percakapan?</DialogTitle>
             <DialogDescription>
-              “{deleteTarget?.title ?? "Percakapan"}” dan seluruh pesannya akan dihapus permanen dari akunmu.
+              Percakapan “{deleteTarget?.title ?? "Percakapan"}” beserta seluruh pesan di dalamnya akan
+              dihapus secara permanen dan tidak dapat dikembalikan.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex flex-wrap justify-end gap-2 pt-2">
-            <Button type="button" variant="ghost" onClick={() => setDeleteTarget(null)} disabled={deleting}>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setDeleteTarget(null)}
+              disabled={deleting}
+            >
               Batal
             </Button>
-            <Button type="button" variant="danger" loading={deleting} onClick={() => void confirmDeleteConversation()}>
-              Hapus percakapan
+            <Button
+              type="button"
+              variant="danger"
+              loading={deleting}
+              onClick={() => void confirmDeleteConversation()}
+            >
+              Hapus permanen
             </Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

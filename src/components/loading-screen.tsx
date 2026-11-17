@@ -5,18 +5,15 @@ import { LoaderCircle } from "lucide-react";
 
 import {
   LoadingContext,
-  getCachedMediaKind,
-  hasClientHydrated,
-  markClientHydrated,
-  setCachedMediaKind,
+  getCachedGifStatus,
+  setCachedGifStatus,
 } from "@/components/loading-context";
+import { LogoMark } from "@/components/logo";
 import {
   DEFAULT_LOADING_DELAY_MS,
+  DEFAULT_LOADING_FADE_MS,
+  LOADING_GIF_SIZE,
   LOADING_GIF_SRC,
-  LOADING_SCREEN_BACKGROUND,
-  LOADING_VIDEO_SRC,
-  getLoadingMediaSource,
-  getNextLoadingMediaFallback,
   type LoadingMediaKind,
 } from "@/lib/loading-screen";
 import { cn } from "@/lib/utils";
@@ -55,220 +52,143 @@ export function usePrefersReducedMotion(): boolean {
   );
 }
 
-export type LoadingScreenProps = {
+export type GlobalLoadingScreenProps = {
   /** Whether the loading screen is active. Defaults to true for Next.js loading.tsx boundaries. */
   active?: boolean;
   /** Anti-flicker reveal delay in ms. Defaults to 150ms. Pass 0 for immediate display. */
   delayMs?: number;
   /** Render full-viewport overlay (default) or fill the nearest positioned container. */
   fullscreen?: boolean;
-  /** Override primary MP4 path (defaults to /loading.mp4). */
-  videoSrc?: string;
-  /** Override fallback GIF path (defaults to /loading.gif). */
+  /** Override loading GIF path (defaults to /loading.gif). */
   gifSrc?: string;
-  /** Internal flag used by AppLoadingProvider's root overlay. */
+  /** Internal flag used by AppLoadingProvider's single managed root overlay. */
   managed?: boolean;
   className?: string;
 };
 
 /**
- * Official LearnCode loading screen.
+ * Official reusable LearnCode global loading screen (`GlobalLoadingScreen`).
  *
- * Displays only the centered logo animation (`public/loading.mp4` first, falling
- * back to `public/loading.gif`) over `#FAF9F5` without text or decorative UI.
+ * Displays only the centered `/loading.gif` brand logo animation over the
+ * active theme background (`#FAF9F5` in light mode, `#121310` in dark mode),
+ * with zero extra text, labels, spinners, or decorative elements.
+ * Falls back safely to the static brand mark if the GIF fails to load or when
+ * `prefers-reduced-motion: reduce` is enabled.
  */
-export function LoadingScreen({
+export function GlobalLoadingScreen({
   active = true,
   delayMs = DEFAULT_LOADING_DELAY_MS,
   fullscreen = true,
-  videoSrc = LOADING_VIDEO_SRC,
   gifSrc = LOADING_GIF_SRC,
   managed = false,
   className,
-}: LoadingScreenProps) {
+}: GlobalLoadingScreenProps) {
   const ctx = React.useContext(LoadingContext);
   const reducedMotion = usePrefersReducedMotion();
-  const cacheKey = `${videoSrc}|${gifSrc}`;
+  const effectiveDelayMs = Math.max(0, delayMs);
 
-  const [mediaKind, setMediaKind] = React.useState<LoadingMediaKind>(() =>
-    hasClientHydrated() ? (getCachedMediaKind(cacheKey) ?? "video") : "video",
+  // If AppLoadingProvider already initiated this client route navigation,
+  // Suspense `loading.tsx` boundaries yield to the single managed root overlay
+  // so two loading screens never overlap and the GIF never restarts mid-transition.
+  const [yieldToManaged] = React.useState<boolean>(() =>
+    Boolean(!managed && ctx?.isNavigationActive()),
   );
-  const [skipDelay] = React.useState<boolean>(() =>
-    Boolean(!managed && hasClientHydrated() && ctx?.isTransitionRevealed()),
+
+  const [prevActive, setPrevActive] = React.useState(active);
+  const [revealed, setRevealed] = React.useState(
+    () => active && effectiveDelayMs === 0,
   );
-  const [gifFrozen, setGifFrozen] = React.useState(false);
+  const [closing, setClosing] = React.useState(false);
 
-  const videoRef = React.useRef<HTMLVideoElement | null>(null);
-  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
-
-  const effectiveDelayMs = skipDelay ? 0 : Math.max(0, delayMs);
-
-  React.useEffect(() => {
-    markClientHydrated();
-  }, []);
-
-  React.useEffect(() => {
-    if (managed || !active || !ctx) return;
-    return ctx.registerRouteBoundary();
-  }, [managed, active, ctx]);
-
-  React.useEffect(() => {
-    if (!active || !ctx) return;
-
-    if (effectiveDelayMs === 0) {
-      ctx.setTransitionRevealed(true);
-      return () => {
-        ctx.setTransitionRevealed(false);
-      };
+  if (managed && active !== prevActive) {
+    setPrevActive(active);
+    if (active) {
+      if (closing) setClosing(false);
+      setRevealed(effectiveDelayMs === 0);
+    } else if (revealed) {
+      setClosing(true);
     }
+  }
 
+  const [gifFailed, setGifFailed] = React.useState<boolean>(
+    () => getCachedGifStatus() === "error",
+  );
+
+  React.useEffect(() => {
+    if (!managed || !active || revealed) return;
     const timer = window.setTimeout(() => {
-      ctx.setTransitionRevealed(true);
+      setRevealed(true);
     }, effectiveDelayMs);
-
-    return () => {
-      window.clearTimeout(timer);
-      ctx.setTransitionRevealed(false);
-    };
-  }, [active, effectiveDelayMs, ctx]);
+    return () => window.clearTimeout(timer);
+  }, [managed, active, revealed, effectiveDelayMs]);
 
   React.useEffect(() => {
-    if (!active || mediaKind !== "video") return;
-    const video = videoRef.current;
-    if (!video) return;
+    if (!managed || active || !closing) return;
+    const timer = window.setTimeout(() => {
+      setClosing(false);
+      setRevealed(false);
+    }, DEFAULT_LOADING_FADE_MS);
+    return () => window.clearTimeout(timer);
+  }, [managed, active, closing]);
 
-    if (reducedMotion) {
-      video.pause();
-      return;
-    }
+  if (managed) {
+    if (!active && !closing) return null;
+  } else if (!active || yieldToManaged) {
+    return null;
+  }
 
-    void video.play().catch(() => {
-      // Autoplay may be blocked by browser energy-saver policies; keep the first frame visible.
-    });
-  }, [active, mediaKind, reducedMotion]);
-
-  if (!active) return null;
-
-  const currentSrc = getLoadingMediaSource(mediaKind, { videoSrc, gifSrc });
-
-  const handleVideoLoaded = (event: React.SyntheticEvent<HTMLVideoElement>) => {
-    setCachedMediaKind(cacheKey, "video");
-    if (reducedMotion) {
-      event.currentTarget.pause();
-    }
-  };
-
-  const handleVideoError = () => {
-    const next = getNextLoadingMediaFallback("video");
-    setCachedMediaKind(cacheKey, next);
-    setGifFrozen(false);
-    setMediaKind(next);
-  };
-
-  const handleGifLoad = (event: React.SyntheticEvent<HTMLImageElement>) => {
-    setCachedMediaKind(cacheKey, "gif");
-    if (!reducedMotion) {
-      if (gifFrozen) setGifFrozen(false);
-      return;
-    }
-
-    const img = event.currentTarget;
-    const canvas = canvasRef.current;
-    if (!canvas || img.naturalWidth <= 0 || img.naturalHeight <= 0) return;
-
-    try {
-      canvas.width = img.naturalWidth;
-      canvas.height = img.naturalHeight;
-      const context = canvas.getContext("2d");
-      if (!context) return;
-      context.clearRect(0, 0, canvas.width, canvas.height);
-      context.drawImage(img, 0, 0);
-      setGifFrozen(true);
-    } catch {
-      setGifFrozen(false);
-    }
-  };
-
-  const handleGifError = () => {
-    const next = getNextLoadingMediaFallback("gif");
-    setCachedMediaKind(cacheKey, next);
-    setGifFrozen(false);
-    setMediaKind(next);
-  };
-
-  const isDelayed = effectiveDelayMs > 0;
+  const useFallback = reducedMotion || gifFailed;
+  const mediaKind: LoadingMediaKind = useFallback ? "fallback" : "gif";
+  const isDelayed = effectiveDelayMs > 0 && (!managed || !closing);
+  const stateAttr = managed && !active && closing ? "closing" : "open";
 
   return (
     <div
       role="status"
       aria-live="polite"
-      aria-busy="true"
+      aria-busy={stateAttr === "open" ? "true" : "false"}
       aria-label="Memuat"
       data-loading-screen="true"
       data-media-kind={mediaKind}
       data-delayed={isDelayed ? "true" : "false"}
+      data-state={stateAttr}
       data-contained={fullscreen ? "false" : "true"}
       style={
-        {
-          backgroundColor: LOADING_SCREEN_BACKGROUND,
-          ...(isDelayed ? { "--loading-delay": `${effectiveDelayMs}ms` } : {}),
-        } as React.CSSProperties
+        isDelayed
+          ? ({ "--loading-delay": `${effectiveDelayMs}ms` } as React.CSSProperties)
+          : undefined
       }
       className={cn("loading-screen-overlay", className)}
     >
-      {mediaKind === "video" && currentSrc ? (
-        <video
-          ref={videoRef}
-          src={currentSrc}
-          autoPlay={!reducedMotion}
-          loop={!reducedMotion}
-          muted
-          playsInline
-          preload="auto"
-          disablePictureInPicture
-          disableRemotePlayback
-          onLoadedData={handleVideoLoaded}
-          onError={handleVideoError}
+      {mediaKind === "gif" ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={gifSrc}
+          width={LOADING_GIF_SIZE}
+          height={LOADING_GIF_SIZE}
+          alt=""
+          loading="eager"
+          decoding="async"
+          draggable={false}
+          onLoad={() => setCachedGifStatus("loaded")}
+          onError={() => {
+            setCachedGifStatus("error");
+            setGifFailed(true);
+          }}
           className="loading-screen-media"
           aria-hidden="true"
         />
-      ) : null}
-
-      {mediaKind === "gif" && currentSrc ? (
-        <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={currentSrc}
-            alt=""
-            loading="eager"
-            decoding="sync"
-            fetchPriority="high"
-            draggable={false}
-            onLoad={handleGifLoad}
-            onError={handleGifError}
-            className={cn(
-              "loading-screen-media",
-              reducedMotion && gifFrozen && "hidden",
-            )}
-            aria-hidden="true"
-          />
-          {reducedMotion ? (
-            <canvas
-              ref={canvasRef}
-              className={cn("loading-screen-media", !gifFrozen && "hidden")}
-              aria-hidden="true"
-            />
-          ) : null}
-        </>
-      ) : null}
+      ) : (
+        <LogoMark className="loading-screen-media" />
+      )}
     </div>
   );
 }
 
 /**
- * Lightweight inline loading indicator for small local actions (loading a
- * single chat conversation, searching history, or lazy-loading an embedded editor)
- * where a full-screen overlay would interrupt the user.
+ * Lightweight inline loading indicator for small local component states
+ * (loading an AI Tutor saved conversation or initializing the Monaco editor)
+ * where a full-screen route overlay must never appear.
  */
 export function LoadingIndicator({
   label = "Memuat…",

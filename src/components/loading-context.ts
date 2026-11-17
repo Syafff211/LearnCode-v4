@@ -2,38 +2,86 @@
 
 import * as React from "react";
 
-import type { LoadingMediaKind } from "@/lib/loading-screen";
-
 export type LoadingContextValue = {
-  startTask: (id: string) => void;
-  stopTask: (id: string) => void;
-  registerRouteBoundary: () => () => void;
-  isTransitionRevealed: () => boolean;
-  setTransitionRevealed: (revealed: boolean) => void;
+  isNavigationActive: () => boolean;
 };
 
 export const LoadingContext = React.createContext<LoadingContextValue | null>(null);
 
-const resolvedMediaCache = new Map<string, LoadingMediaKind>();
-let clientHydrated = false;
+export type GifCacheStatus = "unknown" | "loaded" | "error";
 
-export function hasClientHydrated(): boolean {
-  return clientHydrated;
+type NavigationListener = (active: boolean) => void;
+
+const navigationListeners = new Set<NavigationListener>();
+let committedPathname: string | null = null;
+let routeNavigationActive = false;
+let notifyQueued = false;
+
+let cachedGifStatus: GifCacheStatus = "unknown";
+
+function flushNavigationListeners(): void {
+  notifyQueued = false;
+  for (const listener of navigationListeners) {
+    listener(routeNavigationActive);
+  }
 }
 
-export function markClientHydrated(): void {
-  clientHydrated = true;
+function scheduleNavigationNotification(): void {
+  if (notifyQueued) return;
+  notifyQueued = true;
+  if (typeof queueMicrotask === "function") {
+    queueMicrotask(flushNavigationListeners);
+  } else {
+    void Promise.resolve().then(flushNavigationListeners);
+  }
 }
 
-export function getCachedMediaKind(key: string): LoadingMediaKind | undefined {
-  return resolvedMediaCache.get(key);
+export function getCommittedPathname(): string | null {
+  return committedPathname;
 }
 
-export function setCachedMediaKind(key: string, kind: LoadingMediaKind): void {
-  resolvedMediaCache.set(key, kind);
+export function setCommittedPathname(pathname: string | null): void {
+  committedPathname = pathname;
+}
+
+export function isRouteNavigationActive(): boolean {
+  return routeNavigationActive;
+}
+
+export function startRouteNavigation(): void {
+  if (routeNavigationActive) return;
+  routeNavigationActive = true;
+  // Defer notification via microtask so React state updates escape Next.js's
+  // router startTransition batch and commit immediately while the new route loads.
+  scheduleNavigationNotification();
+}
+
+export function stopRouteNavigation(): void {
+  if (!routeNavigationActive) return;
+  routeNavigationActive = false;
+  scheduleNavigationNotification();
+}
+
+export function subscribeRouteNavigation(
+  listener: NavigationListener,
+): () => void {
+  navigationListeners.add(listener);
+  return () => {
+    navigationListeners.delete(listener);
+  };
+}
+
+export function getCachedGifStatus(): GifCacheStatus {
+  return cachedGifStatus;
+}
+
+export function setCachedGifStatus(status: GifCacheStatus): void {
+  cachedGifStatus = status;
 }
 
 export function clearLoadingMediaCache(): void {
-  resolvedMediaCache.clear();
-  clientHydrated = false;
+  cachedGifStatus = "unknown";
+  committedPathname = null;
+  routeNavigationActive = false;
+  notifyQueued = false;
 }
