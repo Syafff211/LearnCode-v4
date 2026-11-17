@@ -11,10 +11,13 @@ import { TutorChat } from "@/components/ai/tutor-chat";
 import { TutorComposer } from "@/components/ai/tutor-composer";
 import { TutorConversationSidebar } from "@/components/ai/tutor-conversation-sidebar";
 import { TutorMessageList } from "@/components/ai/tutor-message-list";
+import { TutorModeToolbar } from "@/components/ai/tutor-mode-toolbar";
 import {
   CONVERSATION_TITLE_MAX_LENGTH,
   TUTOR_LANGUAGES,
   TUTOR_MODES,
+  TUTOR_OVERFLOW_MODES,
+  TUTOR_PRIMARY_MODES,
   TUTOR_QUICK_REPLIES,
   deriveDescriptiveTitle,
   formatConversationActivity,
@@ -23,33 +26,36 @@ import {
 } from "@/lib/ai/tutor-ui";
 
 describe("AI Tutor UI metadata & helpers", () => {
-  it("defines all 7 AI modes with beginner-friendly descriptions", () => {
+  it("defines 5 primary modes and 2 overflow modes with descriptions and placeholders", () => {
     expect(TUTOR_MODES).toHaveLength(7);
-    expect(TUTOR_MODES.map((m) => m.action)).toEqual([
+    expect(TUTOR_PRIMARY_MODES.map((m) => m.action)).toEqual([
       "free_chat",
       "explain_code",
       "debug_code",
       "hint",
+      "practice_suggestions",
+    ]);
+    expect(TUTOR_OVERFLOW_MODES.map((m) => m.action)).toEqual([
       "code_review",
       "explain_lesson",
-      "practice_suggestions",
     ]);
     for (const mode of TUTOR_MODES) {
       expect(mode.label.trim().length).toBeGreaterThan(0);
       expect(mode.description.trim().length).toBeGreaterThan(10);
+      expect(mode.placeholder.trim().length).toBeGreaterThan(10);
     }
   });
 
-  it("provides the 4 beginner quick-replies and full language labels", () => {
+  it("provides 4 concise quick-replies and compact ID/EN language labels", () => {
     expect(TUTOR_QUICK_REPLIES).toEqual([
-      "Saya ingin belajar HTML dari nol.",
-      "Apa perbedaan HTML dan CSS?",
-      "Bantu saya memahami JavaScript.",
-      "Jelaskan contoh kode sederhana.",
+      "Jelaskan flexbox",
+      "Apa itu closure?",
+      "Latihan JavaScript dasar",
+      "Debug kode saya",
     ]);
     expect(TUTOR_LANGUAGES).toEqual([
-      { value: "id", label: "Indonesia" },
-      { value: "en", label: "English" },
+      { value: "id", label: "ID", fullLabel: "Bahasa Indonesia" },
+      { value: "en", label: "EN", fullLabel: "English" },
     ]);
   });
 
@@ -60,22 +66,19 @@ describe("AI Tutor UI metadata & helpers", () => {
     expect(normal.level).toBe("normal");
     expect(normal.warningText).toBeNull();
 
-    // 20% remaining (6 of 30) triggers warning
     const twentyPct = getQuotaStatus(24, 30);
     expect(twentyPct.remaining).toBe(6);
     expect(twentyPct.level).toBe("warning");
     expect(twentyPct.warningText).toContain("6 pesan");
 
-    // 5 remaining triggers warning even on large limit
     const fiveLeft = getQuotaStatus(95, 100);
     expect(fiveLeft.level).toBe("warning");
 
-    // Exhausted
     const exhausted = getQuotaStatus(30, 30);
     expect(exhausted.level).toBe("exhausted");
     expect(exhausted.remaining).toBe(0);
     expect(exhausted.percentage).toBe(100);
-    expect(exhausted.warningText).toContain("habis");
+    expect(exhausted.warningText).toContain("30/30");
   });
 
   it("derives descriptive <=45 char conversation titles without single-word ambiguity", () => {
@@ -120,12 +123,15 @@ describe("AI Tutor UI metadata & helpers", () => {
 });
 
 describe("AI Tutor SSR components", () => {
-  it("renders redesigned TutorChat with no duplicate new-chat button or quota counter and no fullscreen loading overlay", () => {
+  it("renders streamlined TutorChat with progressive disclosure, single quota badge, and no fullscreen loader", () => {
     const html = renderToStaticMarkup(
       React.createElement(TutorChat, {
         initialUsed: 27,
         dailyLimit: 30,
         modelLabel: "llama 3.3 70b versatile",
+        lessonOptions: [
+          { id: "lesson-1", title: "Flexbox Dasar", courseTitle: "CSS Dasar" },
+        ],
         initialConversations: [
           {
             id: "11111111-1111-4111-8111-111111111111",
@@ -139,18 +145,46 @@ describe("AI Tutor SSR components", () => {
 
     expect(html).toContain("LearnCode AI");
     expect(html).toContain("AI Tutor");
-    expect(html).not.toContain("llama 3.3 70b versatile</span>");
-    expect(html).toContain("Bahasa jawaban AI:");
-    expect(html).toContain("Indonesia");
-    expect(html).toContain("English");
+    expect(html).toContain("h-12");
+    expect(html).toContain("Lainnya");
+    expect(html).toContain("Lesson");
+    expect(html).toContain("ID");
+    expect(html).toContain("EN");
+    expect(html).toContain("Bahasa jawaban AI");
     expect(html).toContain("Apa yang ingin kamu pelajari hari ini?");
-    expect(html).toContain("Saya ingin belajar HTML dari nol.");
-    // Single quota display ("27/30") and single new chat action ("Percakapan baru")
+    expect(html).toContain("Jelaskan flexbox");
+    expect(html).toContain("AI bisa keliru, periksa kembali jawabannya.");
+    expect(html).toContain("Cari riwayat");
+    expect(html).toContain("Riwayat hanya bisa diakses akunmu");
+    // Removed clutter
+    expect(html).not.toContain("Tanyakan sesuatu, pahami kode");
+    expect(html).not.toContain("Riwayat percakapan hanya dapat diakses oleh akunmu.");
+    expect(html).not.toContain("Enter kirim · Shift+Enter baris baru");
+    // Single quota display ("27/30") and single "+ Baru" action
     expect(html.match(/27\/30/g)?.length).toBe(1);
-    expect(html.match(/Percakapan baru/g)?.length).toBe(1);
+    expect(html.match(/<span>Baru<\/span>/g)?.length).toBe(1);
     // Never renders fullscreen global loading screen
     expect(html).not.toContain('data-loading-screen="true"');
     expect(html).not.toContain("/loading.gif");
+  });
+
+  it("renders TutorModeToolbar with 5 primary chips, Lainnya menu, and external help button", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TutorModeToolbar, {
+        mode: "free_chat",
+        disabled: false,
+        onModeChange: () => {},
+      }),
+    );
+
+    expect(html).toContain("Tanya");
+    expect(html).toContain("Jelaskan kode");
+    expect(html).toContain("Debug");
+    expect(html).toContain("Hint");
+    expect(html).toContain("Latihan");
+    expect(html).toContain("Lainnya");
+    expect(html).toContain('aria-label="Panduan semua mode AI Tutor"');
+    expect(html).toContain("bg-gradient-to-l from-canvas");
   });
 
   it("renders readable user & AI messages with icon-only copy controls, code copy, and safe tables", () => {
@@ -192,8 +226,8 @@ describe("AI Tutor SSR components", () => {
     expect(html).toContain("<table");
   });
 
-  it("shows exhausted quota notice in TutorComposer without duplicating quota numbers", () => {
-    const html = renderToStaticMarkup(
+  it("disables textarea and Send in TutorComposer when quota is exhausted or textarea is empty", () => {
+    const exhaustedHtml = renderToStaticMarkup(
       React.createElement(TutorComposer, {
         message: "",
         onMessageChange: () => {},
@@ -210,42 +244,54 @@ describe("AI Tutor SSR components", () => {
         onCodeChange: () => {},
         codeLanguage: "html",
         onCodeLanguageChange: () => {},
+        lessonId: null,
+        lessonOptions: [],
+        onLessonChange: () => {},
+        language: "id",
+        onLanguageChange: () => {},
         inputRef: { current: null },
         formError: null,
       }),
     );
 
-    expect(html).toContain("Kuota pesan harianmu sudah habis");
-    expect(html).toContain("Lampirkan kode");
-    expect(html).toContain("disabled");
-    expect(html).not.toContain("30/30");
-  });
+    expect(exhaustedHtml).toContain("Kuota harian habis (30/30)");
+    expect(exhaustedHtml).toMatch(/<textarea[^>]*disabled=""/);
+    expect(exhaustedHtml).toMatch(/<button[^>]*disabled=""[^>]*type="submit"/);
 
-  it("renders TutorComposer in isolated uncontrolled draft mode when message/code props are omitted", () => {
-    const html = renderToStaticMarkup(
+    const emptyMessageHtml = renderToStaticMarkup(
       React.createElement(TutorComposer, {
-        onSubmitDraft: () => {},
-        mode: "explain_code",
+        message: "   ",
+        onMessageChange: () => {},
+        onSubmit: () => {},
+        mode: "debug_code",
         streaming: false,
         onStop: () => {},
         aiConfigured: true,
-        used: 2,
+        used: 3,
         dailyLimit: 30,
-        showCode: true,
+        showCode: false,
         onToggleCode: () => {},
-        initialCode: "<h1>Hello</h1>",
-        codeLanguage: "html",
+        code: "",
+        onCodeChange: () => {},
+        codeLanguage: "javascript",
         onCodeLanguageChange: () => {},
+        lessonId: null,
+        lessonOptions: [{ id: "l1", title: "Variabel", courseTitle: "JS" }],
+        onLessonChange: () => {},
+        language: "id",
+        onLanguageChange: () => {},
         formError: null,
       }),
     );
 
-    expect(html).toContain("<h1>Hello</h1>".replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
-    expect(html).toContain("Kode terlampir (14)");
-    expect(html).toContain("Kirim");
+    expect(emptyMessageHtml).toContain("Tempel kode yang error atau ceritakan masalahnya…");
+    expect(emptyMessageHtml).toContain("Lesson");
+    expect(emptyMessageHtml).toContain("ID");
+    expect(emptyMessageHtml).toContain("EN");
+    expect(emptyMessageHtml).toMatch(/<button[^>]*disabled=""[^>]*type="submit"/);
   });
 
-  it("renders sidebar empty search state cleanly", () => {
+  it("renders sidebar empty search state, + Baru button, and lock tooltip cleanly", () => {
     const html = renderToStaticMarkup(
       React.createElement(TutorConversationSidebar, {
         idPrefix: "test",
@@ -262,5 +308,8 @@ describe("AI Tutor SSR components", () => {
       }),
     );
     expect(html).toContain("Tidak ada percakapan yang cocok");
+    expect(html).toContain("Cari riwayat");
+    expect(html).toContain("Baru");
+    expect(html).toContain("Riwayat hanya bisa diakses akunmu");
   });
 });

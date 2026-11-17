@@ -153,7 +153,7 @@ const TutorMessageRow = React.memo(function TutorMessageRow({
             title={isCopied ? "Tersalin" : "Salin pesan"}
             aria-label={copyLabel}
             className={cn(
-              "inline-flex size-10 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
+              "inline-flex size-9 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
               isCopied
                 ? "opacity-100 text-ok"
                 : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
@@ -169,7 +169,7 @@ const TutorMessageRow = React.memo(function TutorMessageRow({
             Kamu
           </span>
         </div>
-        <div className="min-w-0 max-w-[min(42rem,92%)] rounded-[12px] border border-line bg-surface-2 px-4 py-3 text-[15px] leading-[1.65] text-ink">
+        <div className="min-w-0 max-w-[min(42rem,92%)] overflow-x-auto rounded-[12px] border border-line bg-surface-2 px-4 py-3 text-[15px] leading-[1.65] text-ink">
           <MessageContent content={message.content} />
           {message.failed ? (
             <p className="mt-2 text-xs font-medium text-danger">
@@ -195,7 +195,7 @@ const TutorMessageRow = React.memo(function TutorMessageRow({
             title={isCopied ? "Tersalin" : "Salin pesan"}
             aria-label={copyLabel}
             className={cn(
-              "inline-flex size-10 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
+              "inline-flex size-9 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
               isCopied
                 ? "opacity-100 text-ok"
                 : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
@@ -209,7 +209,7 @@ const TutorMessageRow = React.memo(function TutorMessageRow({
           </button>
         ) : null}
       </div>
-      <div className="w-full min-w-0 border-l-2 border-accent/25 pl-3.5 sm:pl-4">
+      <div className="w-full min-w-0 overflow-x-auto border-l-2 border-accent/25 pl-3.5 sm:pl-4">
         {message.content ? (
           <MessageContent content={message.content} />
         ) : message.streaming ? (
@@ -326,33 +326,27 @@ export const TutorMessageList = React.memo(function TutorMessageList({
         aria-live={anyStreaming ? "off" : "polite"}
         aria-relevant="additions"
         aria-label="Percakapan dengan LearnCode AI"
-        className="h-full min-h-0 overflow-y-auto overscroll-contain px-3 py-4 sm:px-6 sm:py-5"
+        className="h-full min-h-0 overflow-y-auto overscroll-contain px-3 py-3 sm:px-6 sm:py-5"
       >
         {loading ? (
-          <div className="mx-auto mb-4 flex max-w-[50rem] items-center rounded-[8px] border border-line bg-surface px-4 py-3">
+          <div className="mx-auto mb-4 flex max-w-3xl items-center rounded-[8px] border border-line bg-surface px-4 py-3">
             <LoadingIndicator label="Memuat riwayat percakapan…" />
           </div>
         ) : null}
 
         {messages.length === 0 && !loading ? (
-          <div className="mx-auto flex min-h-full max-w-[40rem] flex-col items-center justify-center py-4 text-center sm:py-8">
-            <span className="flex size-11 items-center justify-center rounded-full border border-line bg-surface shadow-xs">
-              <Sparkles className="size-5 text-accent-text" aria-hidden="true" />
-            </span>
-            <h2 className="mt-4 font-display text-2xl font-semibold tracking-tight text-ink sm:text-[1.65rem]">
+          <div className="mx-auto flex min-h-full max-w-3xl flex-col items-center justify-center py-2 text-center sm:py-4">
+            <h2 className="font-display text-xl font-semibold tracking-tight text-ink sm:text-2xl">
               Apa yang ingin kamu pelajari hari ini?
             </h2>
-            <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted sm:text-[15px]">
-              Tanyakan sesuatu, pahami kode, atau pelajari pemrograman bersama AI Tutor.
-            </p>
-            <div className="mt-6 grid w-full grid-cols-1 gap-2.5 sm:grid-cols-2">
+            <div className="mt-4 grid w-full max-w-2xl grid-cols-1 gap-2 sm:mt-5 sm:grid-cols-2 sm:gap-2.5">
               {TUTOR_QUICK_REPLIES.map((suggestion) => (
                 <button
                   key={suggestion}
                   type="button"
                   disabled={!canQuickReply}
                   onClick={() => onQuickReply(suggestion)}
-                  className="group flex min-h-[44px] items-center justify-between gap-2 rounded-[10px] border border-line bg-surface px-3.5 py-2.5 text-left text-sm font-medium text-ink-soft transition-colors hover:border-accent/50 hover:bg-surface-2/60 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text disabled:cursor-not-allowed disabled:opacity-55 motion-reduce:transition-none"
+                  className="group flex min-h-11 items-center justify-between gap-2 rounded-[10px] border border-line bg-surface px-3.5 py-2.5 text-left text-sm font-medium text-ink-soft transition-colors hover:border-accent/50 hover:bg-surface-2/60 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text disabled:cursor-not-allowed disabled:opacity-55 motion-reduce:transition-none"
                 >
                   <span className="leading-snug">{suggestion}</span>
                   <ArrowUpRight
@@ -366,7 +360,7 @@ export const TutorMessageList = React.memo(function TutorMessageList({
         ) : null}
 
         {messages.length > 0 ? (
-          <ol className="mx-auto flex max-w-[50rem] flex-col gap-5 pb-14 sm:gap-6 sm:pb-16">
+          <ol className="mx-auto flex max-w-3xl flex-col gap-5 pb-14 sm:gap-6 sm:pb-16">
             {messages.map((message) => (
               <TutorMessageRow
                 key={message.id}
@@ -381,7 +375,7 @@ export const TutorMessageList = React.memo(function TutorMessageList({
         {error ? (
           <div
             role="alert"
-            className="mx-auto mt-3 max-w-[50rem] rounded-[8px] border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-ink"
+            className="mx-auto mt-3 max-w-3xl rounded-[8px] border border-danger/30 bg-danger-soft px-4 py-3 text-sm text-ink"
           >
             <p>{error.message}</p>
             <div className="mt-2.5 flex flex-wrap items-center gap-2">

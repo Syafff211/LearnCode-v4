@@ -556,7 +556,7 @@ export function TutorChat({
           return;
         }
         if (remaining <= 0) {
-          setFormError("Kuota AI harian sudah habis. Coba lagi besok.");
+          setFormError(`Kuota harian habis (${dailyLimit}/${dailyLimit}). Riwayat tetap bisa dibaca.`);
           return;
         }
 
@@ -996,28 +996,15 @@ export function TutorChat({
     ],
   );
 
+  // Fill textarea and focus it when a suggestion card is clicked so beginners can review or add context.
   const handleQuickReply = React.useCallback(
     (suggestion: string) => {
-      if (streaming || !aiConfigured) return;
-      if (remaining <= 0) {
-        setFormError("Kuota AI harian sudah habis. Coba lagi besok.");
-        return;
-      }
-      const currentCode = composerRef.current?.getDraft().code ?? "";
-      if (codeActions.has(mode) && !currentCode.trim()) {
-        composerRef.current?.setMessage(suggestion);
-        setShowCode(true);
-        setFormError("Lampirkan kode terlebih dahulu agar AI dapat menjalankan mode ini.");
-        return;
-      }
-      if (mode === "explain_lesson" && !lessonId) {
-        composerRef.current?.setMessage(suggestion);
-        setFormError("Pilih konteks lesson terlebih dahulu pada toolbar di atas.");
-        return;
-      }
-      void send(false, { message: suggestion, code: currentCode });
+      if (streaming || !aiConfigured || remaining <= 0) return;
+      setFormError(null);
+      composerRef.current?.setMessage(suggestion);
+      composerRef.current?.focus();
     },
-    [aiConfigured, lessonId, mode, remaining, send, streaming],
+    [aiConfigured, remaining, streaming],
   );
 
   const copyMessage = React.useCallback(async (entry: TutorMessage) => {
@@ -1090,9 +1077,9 @@ export function TutorChat({
   const BrandHeading = embedded ? "p" : "h1";
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-canvas text-ink">
-      <header className="flex min-h-12 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-2.5 py-1.5 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-canvas text-ink">
+      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-line bg-surface px-2.5 sm:px-4">
+        <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
           {!embedded ? (
             <>
               <button
@@ -1101,7 +1088,7 @@ export function TutorChat({
                 aria-label={sidebarOpen ? "Sembunyikan riwayat percakapan" : "Tampilkan riwayat percakapan"}
                 aria-expanded={sidebarOpen}
                 title={sidebarOpen ? "Sembunyikan sidebar" : "Tampilkan sidebar"}
-                className="hidden size-10 shrink-0 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text lg:inline-flex motion-reduce:transition-none"
+                className="hidden size-8 shrink-0 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text lg:inline-flex motion-reduce:transition-none"
               >
                 {sidebarOpen ? (
                   <PanelLeftClose className="size-4" aria-hidden="true" />
@@ -1114,15 +1101,15 @@ export function TutorChat({
                 onClick={() => setHistoryOpen(true)}
                 aria-label="Buka riwayat percakapan"
                 title="Riwayat percakapan"
-                className="inline-flex size-10 shrink-0 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text lg:hidden motion-reduce:transition-none"
+                className="inline-flex size-8 shrink-0 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text lg:hidden motion-reduce:transition-none"
               >
                 <History className="size-4" aria-hidden="true" />
               </button>
             </>
           ) : null}
 
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-[7px] bg-accent-soft">
-            <Sparkles className="size-4 text-accent-text" aria-hidden="true" />
+          <span className="flex size-7 shrink-0 items-center justify-center rounded-[6px] bg-accent-soft">
+            <Sparkles className="size-3.5 text-accent-text" aria-hidden="true" />
           </span>
 
           <div className="flex min-w-0 items-center gap-2">
@@ -1135,7 +1122,7 @@ export function TutorChat({
                 embedded ? "hidden sm:inline-flex" : "inline-flex",
                 aiConfigured
                   ? "border-accent/25 bg-accent-soft text-accent-text"
-                  : "border-highlight/30 bg-highlight-soft text-highlight",
+                  : "border-highlight/30 bg-highlight-soft text-ink",
               )}
               role="status"
               title={aiConfigured ? `AI Tutor aktif · Model ${modelLabel}` : "Layanan AI tidak tersedia"}
@@ -1158,11 +1145,11 @@ export function TutorChat({
               size="sm"
               variant="secondary"
               onClick={onNewChat}
-              aria-label="Mulai percakapan baru"
-              className="h-10 px-2.5 sm:px-3"
+              aria-label="Percakapan baru"
+              className="h-8 px-2.5"
             >
               <Plus aria-hidden="true" />
-              <span className="hidden sm:inline">Percakapan baru</span>
+              <span>Baru</span>
             </Button>
           ) : null}
 
@@ -1171,7 +1158,7 @@ export function TutorChat({
               type="button"
               onClick={onClose}
               aria-label="Tutup LearnCode AI"
-              className="inline-flex size-10 items-center justify-center rounded-[6px] text-muted hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
+              className="inline-flex size-8 items-center justify-center rounded-[6px] text-muted hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
             >
               <X className="size-4" aria-hidden="true" />
             </button>
@@ -1179,10 +1166,10 @@ export function TutorChat({
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         {!embedded && sidebarOpen ? (
           <aside
-            className="hidden w-[17rem] shrink-0 border-r border-line lg:flex"
+            className="hidden min-h-0 w-[17rem] shrink-0 border-r border-line lg:flex"
             aria-label="Riwayat percakapan"
           >
             <TutorConversationSidebar
@@ -1202,17 +1189,11 @@ export function TutorChat({
           </aside>
         ) : null}
 
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <TutorModeToolbar
             mode={mode}
-            lessonId={lessonId}
-            fixedLesson={fixedLesson}
-            lessonOptions={lessonOptions}
-            language={language}
             disabled={streaming}
             onModeChange={chooseMode}
-            onLessonChange={handleLessonChange}
-            onLanguageChange={setLanguage}
           />
           <TutorMessageList
             messages={messages}
@@ -1240,6 +1221,12 @@ export function TutorChat({
             initialCode={initialCode}
             codeLanguage={codeLanguage}
             onCodeLanguageChange={setCodeLanguage}
+            lessonId={lessonId}
+            fixedLesson={fixedLesson}
+            lessonOptions={lessonOptions}
+            onLessonChange={handleLessonChange}
+            language={language}
+            onLanguageChange={setLanguage}
             formError={formError}
             onClearFormError={handleClearFormError}
           />

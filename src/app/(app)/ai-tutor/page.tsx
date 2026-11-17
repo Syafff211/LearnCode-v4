@@ -45,7 +45,7 @@ export default async function AiTutorPage() {
   const modelLabel = aiSettings.model.split("/").at(-1)?.replaceAll("-", " ") ?? "Groq model";
 
   return (
-    <div className="h-[calc(100dvh-3.8125rem)] min-h-[28rem] overflow-hidden">
+    <div className="flex h-[calc(100dvh-3.8125rem)] min-h-0 flex-col overflow-hidden">
       <TutorChat
         initialConversations={conversations}
         lessonOptions={lessonOptions}

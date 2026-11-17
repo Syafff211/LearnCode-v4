@@ -30,28 +30,27 @@ export const TutorQuotaControl = React.memo(function TutorQuotaControl({
           type="button"
           aria-label={`Detail kuota AI: ${quota.summaryText}, ${quota.remainingText}`}
           className={cn(
-            "inline-flex min-h-10 items-center gap-2 rounded-[6px] border px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
+            "inline-flex h-8 items-center gap-1.5 rounded-[6px] border px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none sm:px-2.5",
             isExhausted
-              ? "border-danger/40 bg-danger-soft text-danger hover:border-danger/60"
+              ? "border-danger/45 bg-danger-soft text-danger hover:border-danger/65"
               : isWarning
-                ? "border-highlight/40 bg-highlight-soft text-highlight hover:border-highlight/60"
+                ? "border-highlight/45 bg-highlight-soft text-ink hover:border-highlight/65"
                 : "border-line bg-canvas text-ink-soft hover:border-line-strong hover:text-ink",
           )}
         >
           {isExhausted ? (
-            <Ban className="size-3.5 shrink-0" aria-hidden="true" />
+            <Ban className="size-3.5 shrink-0 text-danger" aria-hidden="true" />
           ) : isWarning ? (
-            <AlertTriangle className="size-3.5 shrink-0" aria-hidden="true" />
+            <AlertTriangle className="size-3.5 shrink-0 text-highlight" aria-hidden="true" />
           ) : (
             <Gauge className="size-3.5 shrink-0 text-accent-text" aria-hidden="true" />
           )}
           <span className="tabular-nums whitespace-nowrap">
             {quota.used}/{quota.dailyLimit}
-            <span className="hidden sm:inline"> pesan</span>
           </span>
           <span
             aria-hidden="true"
-            className="hidden h-1.5 w-12 overflow-hidden rounded-full bg-surface-3 md:inline-block"
+            className="hidden h-1.5 w-10 overflow-hidden rounded-full bg-surface-3 sm:inline-block"
           >
             <span
               className={cn(
@@ -65,7 +64,7 @@ export const TutorQuotaControl = React.memo(function TutorQuotaControl({
               style={{ width: `${quota.percentage}%` }}
             />
           </span>
-          <ChevronDown className="size-3.5 shrink-0 opacity-70" aria-hidden="true" />
+          <ChevronDown className="size-3.5 shrink-0 text-muted" aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
 
@@ -82,7 +81,7 @@ export const TutorQuotaControl = React.memo(function TutorQuotaControl({
                 isExhausted
                   ? "bg-danger-soft text-danger"
                   : isWarning
-                    ? "bg-highlight-soft text-highlight"
+                    ? "bg-highlight-soft text-ink"
                     : "bg-accent-soft text-accent-text",
               )}
             >
