@@ -17,7 +17,7 @@ README says so explicitly instead of pretending it is already set up.
 
 | Area | Route | Notes |
 | --- | --- | --- |
-| Landing page | `/` | Editorial marketing page, no fabricated metrics, testimonials, or partners |
+| Landing page | `/` | Editorial marketing page, no fabricated metrics, testimonials, or partners; plays the `public/intro.mp4` intro clip once per visitor |
 | Catalogue | `/courses` | Three courses sourced from the database, with a content fallback |
 | Course detail | `/courses/[slug]` | Objectives, lesson list, certificate requirements, quiz entry |
 | Auth | `/login`, `/register`, `/forgot-password`, `/reset-password` | Supabase Auth; signup requires email OTP when Supabase Confirm email is enabled; OTP verified server-side |
@@ -46,6 +46,36 @@ The blog uses the canonical origin `https://learncode.web.id`, route-specific Ne
 The admin CMS lives at `/admin/blog`. Each mutation independently verifies the existing Supabase admin session, validates input and references, rate-limits sensitive actions, and records an audit event. Publishing requires at least 1,200 characters, 250 words, two Markdown subheadings, and a 60-character excerpt. Cover images are optional HTTPS URLs with required alt text; no Storage bucket is used. The initial editorial seed contains five categories and ten substantive Indonesian articles, attributed to the LearnCode publisher fallback—not invented people or credentials.
 
 The MasterCode promotion is an in-memory dialog shown once per full document load, without storing dismissal state. It closes on dismissal or internal navigation and is excluded from admin, authentication, and verification routes.
+
+### Landing intro video
+
+The landing page opens a full-viewport intro overlay on a visitor's first
+visit. The 16:9 video keeps its complete frame (`object-fit: contain`), so on a
+portrait phone it appears centered with dark bars rather than cropping the
+sides. Playback tries autoplay with sound first; if the browser blocks audible
+autoplay, it falls back to muted with a sound toggle. The overlay closes
+automatically when the clip ends; it can also be skipped with a button or
+`Escape`. The visit is remembered in `localStorage` under
+`learncode:intro-video`, so the clip does not replay on later loads; the
+**Putar intro** button in the hero plays it again on demand.
+
+Rules the implementation follows:
+
+- Replace `public/intro.mp4` with your own file (keep the name), or point
+  `NEXT_PUBLIC_INTRO_VIDEO_URL` at an https URL to serve the clip from somewhere
+  else, such as a Supabase Storage public link. Only `/`-relative paths and
+  `http(s)` URLs are accepted; any other value disables the intro instead of
+  rendering it.
+- Visitors who request `prefers-reduced-motion: reduce` are never auto-played the
+  clip.
+- If the file is missing, blocked, or undecodable, the overlay closes itself and
+  the landing page stays usable — an intro never blocks the page.
+- The committed file is a short generated placeholder (6 s, 720p, ~40 KB).
+  Whatever you ship becomes part of the deployment bundle, so keep it short.
+
+Component: `src/components/marketing/intro-video.tsx`; pure source and gating
+rules: `src/lib/intro-video.ts`, covered by `tests/unit/intro-video.test.ts` and
+asserted end to end in `e2e/public.spec.ts`.
 
 ---
 

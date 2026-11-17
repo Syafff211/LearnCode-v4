@@ -8,6 +8,7 @@ import "@fontsource-variable/jetbrains-mono";
 import "./globals.css";
 
 import { AppToaster } from "@/components/app-toaster";
+import { AppLoadingProvider } from "@/components/loading-provider";
 import { PromotionPopup } from "@/components/promotional/PromotionPopup";
 import { ThemeProvider, type ThemePreference } from "@/components/theme-provider";
 import { getPlatformSettings } from "@/lib/platform";
@@ -113,14 +114,16 @@ export default async function RootLayout({
 
       <body className="min-h-dvh bg-canvas text-ink antialiased">
         <ThemeProvider initialTheme={initialTheme}>
-          <a href="#main-content" className="skip-link">
-            Lewati ke konten utama
-          </a>
+          <AppLoadingProvider>
+            <a href="#main-content" className="skip-link">
+              Lewati ke konten utama
+            </a>
 
-          {children}
+            {children}
 
-          <PromotionPopup />
-          <AppToaster />
+            <PromotionPopup />
+            <AppToaster />
+          </AppLoadingProvider>
         </ThemeProvider>
       </body>
     </html>

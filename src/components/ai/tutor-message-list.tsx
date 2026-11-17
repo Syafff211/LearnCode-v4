@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ArrowDown, Check, Copy, RotateCcw, Sparkles } from "lucide-react";
 
+import { LoadingIndicator } from "@/components/loading-screen";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { TutorError, TutorMessage } from "@/components/ai/tutor-chat-types";
@@ -173,9 +174,8 @@ export function TutorMessageList({
         className="h-full min-h-0 overflow-y-auto overscroll-contain px-4 py-5 sm:px-6"
       >
         {loading ? (
-          <div className="mx-auto flex max-w-xl items-center gap-2 rounded-[6px] border border-line bg-surface px-3 py-2 text-xs text-muted" role="status">
-            <span className="size-1.5 animate-pulse rounded-full bg-accent motion-reduce:animate-none" aria-hidden="true" />
-            Memuat percakapan…
+          <div className="mx-auto flex max-w-xl items-center rounded-[6px] border border-line bg-surface px-3 py-2">
+            <LoadingIndicator label="Memuat percakapan…" />
           </div>
         ) : null}
 

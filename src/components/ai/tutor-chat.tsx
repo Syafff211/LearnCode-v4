@@ -18,6 +18,7 @@ import {
   TutorMessageList,
 } from "@/components/ai/tutor-message-list";
 import { TutorModeToolbar } from "@/components/ai/tutor-mode-toolbar";
+import { useLoadingTask } from "@/components/loading-provider";
 import type {
   TutorConversation,
   TutorError,
@@ -150,9 +151,24 @@ export function TutorChat({
   const lastInitialCodeRef = React.useRef(initialCode);
 
   const remaining = Math.max(0, dailyLimit - used);
+  const awaitingAiResponse =
+    streaming && messages.some((entry) => entry.streaming && entry.content.length === 0);
   const visibleConversations = conversationSearch.trim()
     ? searchResults ?? []
     : allConversations;
+
+  useLoadingTask("ai-tutor", awaitingAiResponse);
+
+  React.useEffect(() => {
+    if (!awaitingAiResponse) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        abortRef.current?.abort();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [awaitingAiResponse]);
 
   React.useEffect(() => {
     if (autoFocus) inputRef.current?.focus();

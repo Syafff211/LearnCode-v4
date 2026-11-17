@@ -6,6 +6,7 @@ import { loader, type Monaco } from "@monaco-editor/react";
 import { AlertTriangle, Play, RotateCcw, Save, Terminal, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { LoadingIndicator } from "@/components/loading-screen";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "@/components/theme-provider";
 import { buildPreviewDocument, isValidConsoleMessage, type ConsoleEntry, type PlaygroundFiles } from "@/lib/playground";
@@ -15,9 +16,7 @@ const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
   loading: () => (
     <div className="flex h-full items-center justify-center bg-code-bg">
-      <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
-        Memuat editor…
-      </span>
+      <LoadingIndicator label="Memuat editor…" className="font-mono text-[11px] uppercase tracking-[0.1em]" />
     </div>
   ),
 });
@@ -285,9 +284,7 @@ export function CodeWorkspace({
             theme={resolvedTheme === "dark" ? "learncode-dark" : "learncode-light"}
             loading={
               <div className="flex h-full items-center justify-center bg-code-bg">
-                <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
-                  Memuat editor…
-                </span>
+                <LoadingIndicator label="Memuat editor…" className="font-mono text-[11px] uppercase tracking-[0.1em]" />
               </div>
             }
             options={{
