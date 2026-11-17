@@ -927,19 +927,36 @@ button {
   position: absolute;
 }
 
-.loading-screen-overlay[data-state="open"][data-delayed="true"] {
+.loading-screen-overlay[data-managed="true"] {
   opacity: 0;
   pointer-events: none;
-  animation: loading-screen-reveal 180ms ease-out var(--loading-delay, 150ms) forwards;
+  transition: opacity 120ms ease-out;
 }
 
-.loading-screen-overlay[data-state="open"][data-delayed="false"] {
-  animation: loading-screen-reveal 140ms ease-out both;
+.loading-screen-overlay[data-managed="true"][data-state="open"][data-revealed="true"] {
+  opacity: 1;
+  pointer-events: auto;
 }
 
-.loading-screen-overlay[data-state="closing"] {
+.loading-screen-overlay[data-managed="true"][data-state="closing"] {
+  opacity: 0;
   pointer-events: none;
-  animation: loading-screen-hide 180ms ease-out forwards;
+  transition: opacity 150ms ease-out;
+}
+
+.loading-screen-overlay[data-managed="false"][data-state="open"][data-delayed="true"] {
+  opacity: 0;
+  pointer-events: none;
+  animation: loading-screen-reveal 120ms ease-out var(--loading-delay, 80ms) forwards;
+}
+
+.loading-screen-overlay[data-managed="false"][data-state="open"][data-delayed="false"] {
+  animation: loading-screen-reveal 120ms ease-out both;
+}
+
+.loading-screen-overlay[data-managed="false"][data-state="closing"] {
+  pointer-events: none;
+  animation: loading-screen-hide 150ms ease-out forwards;
 }
 
 .loading-screen-media {

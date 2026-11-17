@@ -19,10 +19,20 @@ const placeholders: Record<AiAction, string> = {
   practice_suggestions: "Topik atau level latihan apa yang kamu inginkan?",
 };
 
-export function TutorComposer({
+export type TutorComposerHandle = {
+  getDraft: () => { message: string; code: string };
+  setMessage: (value: string) => void;
+  setCode: (value: string) => void;
+  restoreMessageIfEmpty: (value: string) => void;
+  clearAll: () => void;
+  focus: () => void;
+};
+
+export const TutorComposer = React.memo(function TutorComposer({
   message,
   onMessageChange,
   onSubmit,
+  onSubmitDraft,
   mode,
   streaming,
   onStop,
@@ -32,15 +42,19 @@ export function TutorComposer({
   showCode,
   onToggleCode,
   code,
+  initialCode = "",
   onCodeChange,
   codeLanguage,
   onCodeLanguageChange,
-  inputRef,
+  inputRef: externalInputRef,
+  composerRef,
   formError,
+  onClearFormError,
 }: {
-  message: string;
-  onMessageChange: (value: string) => void;
-  onSubmit: () => void;
+  message?: string;
+  onMessageChange?: (value: string) => void;
+  onSubmit?: () => void;
+  onSubmitDraft?: (draft: { message: string; code: string }) => void;
   mode: AiAction;
   streaming: boolean;
   onStop: () => void;
@@ -49,29 +63,110 @@ export function TutorComposer({
   dailyLimit: number;
   showCode: boolean;
   onToggleCode: () => void;
-  code: string;
-  onCodeChange: (value: string) => void;
+  code?: string;
+  initialCode?: string;
+  onCodeChange?: (value: string) => void;
   codeLanguage: "html" | "css" | "javascript";
   onCodeLanguageChange: (value: "html" | "css" | "javascript") => void;
-  inputRef: React.RefObject<HTMLTextAreaElement | null>;
+  inputRef?: React.RefObject<HTMLTextAreaElement | null>;
+  composerRef?: React.RefObject<TutorComposerHandle | null>;
   formError: string | null;
+  onClearFormError?: () => void;
 }) {
+  const internalInputRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const resolvedInputRef = externalInputRef ?? internalInputRef;
+
+  const [internalMessage, setInternalMessage] = React.useState("");
+  const [internalCode, setInternalCode] = React.useState(() => initialCode.slice(0, 8000));
+  const lastInitialCodeRef = React.useRef(initialCode);
+
+  React.useEffect(() => {
+    if (initialCode !== lastInitialCodeRef.current) {
+      lastInitialCodeRef.current = initialCode;
+      setInternalCode(initialCode.slice(0, 8000));
+    }
+  }, [initialCode]);
+
+  const effectiveMessage = message !== undefined ? message : internalMessage;
+  const effectiveCode = code !== undefined ? code : internalCode;
+
+  const draftRef = React.useRef({ message: effectiveMessage, code: effectiveCode });
+
+  React.useEffect(() => {
+    draftRef.current = { message: effectiveMessage, code: effectiveCode };
+  }, [effectiveMessage, effectiveCode]);
+
+  const setDraftMessage = React.useCallback(
+    (next: string) => {
+      const clamped = next.slice(0, 4000);
+      draftRef.current = { ...draftRef.current, message: clamped };
+      if (message === undefined) setInternalMessage(clamped);
+      onMessageChange?.(clamped);
+    },
+    [message, onMessageChange],
+  );
+
+  const setDraftCode = React.useCallback(
+    (next: string) => {
+      const clamped = next.slice(0, 8000);
+      draftRef.current = { ...draftRef.current, code: clamped };
+      if (code === undefined) setInternalCode(clamped);
+      onCodeChange?.(clamped);
+    },
+    [code, onCodeChange],
+  );
+
+  React.useImperativeHandle(
+    composerRef,
+    () => ({
+      getDraft: () => draftRef.current,
+      setMessage: setDraftMessage,
+      setCode: setDraftCode,
+      restoreMessageIfEmpty: (value: string) => {
+        if (!value.trim()) return;
+        if (message === undefined) {
+          setInternalMessage((current) =>
+            current.trim().length === 0 ? value.slice(0, 4000) : current,
+          );
+        } else if (message.trim().length === 0) {
+          onMessageChange?.(value.slice(0, 4000));
+        }
+      },
+      clearAll: () => {
+        if (message === undefined) setInternalMessage("");
+        onMessageChange?.("");
+        if (code === undefined) setInternalCode("");
+        onCodeChange?.("");
+      },
+      focus: () => resolvedInputRef.current?.focus(),
+    }),
+    [code, message, onCodeChange, onMessageChange, resolvedInputRef, setDraftCode, setDraftMessage],
+  );
+
   React.useLayoutEffect(() => {
-    const node = inputRef.current;
+    const node = resolvedInputRef.current;
     if (!node) return;
     node.style.height = "0px";
     node.style.height = `${Math.min(Math.max(node.scrollHeight, 44), 180)}px`;
-  }, [inputRef, message]);
+  }, [resolvedInputRef, effectiveMessage]);
 
   const quota = getQuotaStatus(used, dailyLimit);
   const canSubmit = aiConfigured && quota.remaining > 0 && !streaming;
 
+  function submitCurrentDraft() {
+    if (onSubmitDraft) {
+      onSubmitDraft(draftRef.current);
+      return;
+    }
+    onSubmit?.();
+  }
+
   return (
-    <div className="shrink-0 border-t border-line bg-surface px-3 pb-[max(0.625rem,env(safe-area-inset-bottom))] pt-2.5 sm:px-5 sm:pt-3">
+    <div className="shrink-0 border-t border-line bg-surface px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 sm:px-5 sm:pt-2.5">
       <div className="mx-auto max-w-[50rem]">
         {quota.level === "exhausted" ? (
           <p
-            className="mb-2 rounded-[6px] border border-danger/30 bg-danger-soft px-3 py-2 text-xs leading-relaxed text-ink"
+            className="mb-2 rounded-[6px] border border-danger/30 bg-danger-soft px-3 py-1.5 text-xs leading-relaxed text-ink"
             role="status"
           >
             {quota.warningText}
@@ -87,7 +182,7 @@ export function TutorComposer({
 
         {!aiConfigured ? (
           <p
-            className="mb-2 rounded-[6px] border border-highlight/30 bg-highlight-soft px-3 py-2 text-xs leading-relaxed text-ink"
+            className="mb-2 rounded-[6px] border border-highlight/30 bg-highlight-soft px-3 py-1.5 text-xs leading-relaxed text-ink"
             role="status"
           >
             Layanan LearnCode AI sedang tidak tersedia. Kamu tetap dapat membuka riwayat percakapan.
@@ -95,7 +190,7 @@ export function TutorComposer({
         ) : null}
 
         {formError ? (
-          <p role="alert" className="mb-2 text-xs font-medium text-danger">
+          <p role="alert" className="mb-1.5 text-xs font-medium text-danger">
             {formError}
           </p>
         ) : null}
@@ -103,12 +198,12 @@ export function TutorComposer({
         <form
           onSubmit={(event) => {
             event.preventDefault();
-            onSubmit();
+            submitCurrentDraft();
           }}
-          className="rounded-[10px] border border-line-strong bg-canvas p-2.5 shadow-[0_2px_12px_rgb(25_24_20/0.04)] transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20"
+          className="rounded-[10px] border border-line-strong bg-canvas p-2 shadow-[0_2px_12px_rgb(25_24_20/0.04)] transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/20"
         >
           {showCode ? (
-            <div className="mb-2.5 rounded-[7px] border border-line bg-surface">
+            <div className="mb-2 rounded-[7px] border border-line bg-surface">
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line px-3 py-1.5">
                 <label htmlFor="ai-code" className="text-xs font-medium text-ink-soft">
                   Lampiran kode
@@ -128,8 +223,11 @@ export function TutorComposer({
                   </select>
                   <button
                     type="button"
-                    onClick={() => onCodeChange("")}
-                    disabled={!code}
+                    onClick={() => {
+                      setDraftCode("");
+                      if (formError) onClearFormError?.();
+                    }}
+                    disabled={!effectiveCode}
                     title="Bersihkan kode lampiran"
                     aria-label="Hapus kode lampiran"
                     className="inline-flex size-8 items-center justify-center rounded-[4px] text-muted hover:bg-surface-2 hover:text-ink disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
@@ -140,8 +238,11 @@ export function TutorComposer({
               </div>
               <Textarea
                 id="ai-code"
-                value={code}
-                onChange={(event) => onCodeChange(event.target.value.slice(0, 8000))}
+                value={effectiveCode}
+                onChange={(event) => {
+                  setDraftCode(event.target.value);
+                  if (formError) onClearFormError?.();
+                }}
                 placeholder="Tempel kode HTML, CSS, atau JavaScript di sini…"
                 maxLength={8000}
                 rows={4}
@@ -149,7 +250,7 @@ export function TutorComposer({
                 spellCheck={false}
               />
               <p className="border-t border-line px-3 py-1 text-right font-mono text-xs text-muted tabular-nums">
-                {code.length}/8000
+                {effectiveCode.length}/8000
               </p>
             </div>
           ) : null}
@@ -158,10 +259,13 @@ export function TutorComposer({
             Pesan untuk LearnCode AI
           </label>
           <Textarea
-            ref={inputRef}
+            ref={resolvedInputRef}
             id="ai-message"
-            value={message}
-            onChange={(event) => onMessageChange(event.target.value.slice(0, 4000))}
+            value={effectiveMessage}
+            onChange={(event) => {
+              setDraftMessage(event.target.value);
+              if (formError) onClearFormError?.();
+            }}
             onKeyDown={(event) => {
               if (
                 event.key === "Enter" &&
@@ -171,7 +275,7 @@ export function TutorComposer({
                 !event.nativeEvent.isComposing
               ) {
                 event.preventDefault();
-                if (canSubmit) onSubmit();
+                if (canSubmit) submitCurrentDraft();
               }
             }}
             placeholder={placeholders[mode]}
@@ -180,7 +284,7 @@ export function TutorComposer({
             className="min-h-11 max-h-[180px] resize-none border-0 bg-transparent px-1.5 py-1.5 text-base leading-relaxed shadow-none focus-visible:ring-0 sm:text-[15px]"
           />
 
-          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-2.5">
               <button
                 type="button"
@@ -189,7 +293,9 @@ export function TutorComposer({
                 aria-controls={showCode ? "ai-code" : undefined}
                 className={cn(
                   "inline-flex min-h-9 items-center gap-1.5 rounded-[6px] px-2.5 text-xs font-medium transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
-                  showCode || code ? "bg-accent-soft/65 text-accent-text" : "text-muted hover:text-ink",
+                  showCode || effectiveCode
+                    ? "bg-accent-soft/65 text-accent-text"
+                    : "text-muted hover:text-ink",
                 )}
               >
                 {showCode ? (
@@ -198,8 +304,8 @@ export function TutorComposer({
                   <Paperclip className="size-4" aria-hidden="true" />
                 )}
                 <span>
-                  {code
-                    ? `Kode terlampir (${code.length})`
+                  {effectiveCode
+                    ? `Kode terlampir (${effectiveCode.length})`
                     : showCode
                       ? "Tutup lampiran kode"
                       : "Lampirkan kode"}
@@ -211,12 +317,12 @@ export function TutorComposer({
             </div>
 
             <div className="flex items-center gap-2">
-              {message.length > 0 ? (
+              {effectiveMessage.length > 0 ? (
                 <span
                   className="font-mono text-xs text-muted tabular-nums"
-                  aria-label={`${message.length} dari 4000 karakter`}
+                  aria-label={`${effectiveMessage.length} dari 4000 karakter`}
                 >
-                  {message.length}/4000
+                  {effectiveMessage.length}/4000
                 </span>
               ) : null}
               {streaming ? (
@@ -234,10 +340,10 @@ export function TutorComposer({
           </div>
         </form>
 
-        <p className="mt-1.5 px-1 text-center text-xs leading-normal text-muted sm:text-left">
+        <p className="mt-1 px-1 text-center text-[11px] leading-normal text-muted sm:text-left sm:text-xs">
           LearnCode AI dapat keliru. Periksa kembali saran sebelum digunakan; AI tidak menjalankan kode.
         </p>
       </div>
     </div>
   );
-}
+});

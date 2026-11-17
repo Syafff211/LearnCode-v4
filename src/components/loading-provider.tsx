@@ -6,7 +6,9 @@ import { usePathname, useSearchParams } from "next/navigation";
 
 import {
   LoadingContext,
+  acquireSuspenseBoundary,
   getCachedGifStatus,
+  isGlobalLoadingActive,
   isRouteNavigationActive,
   setCachedGifStatus,
   setCommittedPathname,
@@ -22,7 +24,7 @@ import {
   normalizePathname,
 } from "@/lib/loading-screen";
 
-function getServerNavigationSnapshot(): boolean {
+function getServerLoadingSnapshot(): boolean {
   return false;
 }
 
@@ -33,6 +35,10 @@ function NavigationWatcher() {
 
   React.useEffect(() => {
     setCommittedPathname(pathname);
+    // Clear the pre-commit navigation lock once the router commits the new URL.
+    // If a route `loading.tsx` Suspense boundary is still streaming dynamic server
+    // data (`activeSuspenseCount > 0`), `isGlobalLoadingActive()` stays `true`
+    // until that boundary unmounts alongside the rendered page content.
     stopRouteNavigation();
   }, [pathname, search]);
 
@@ -93,16 +99,16 @@ function NavigationWatcher() {
 }
 
 export function AppLoadingProvider({ children }: { children: React.ReactNode }) {
-  const navActive = React.useSyncExternalStore(
+  const loadingActive = React.useSyncExternalStore(
     subscribeRouteNavigation,
-    isRouteNavigationActive,
-    getServerNavigationSnapshot,
+    isGlobalLoadingActive,
+    getServerLoadingSnapshot,
   );
 
   // Pre-warm /loading.gif once when the browser is idle so first navigation
   // renders immediately from cache (skipped under prefers-reduced-motion).
   React.useEffect(() => {
-    if (getCachedGifStatus() !== null) return;
+    if (getCachedGifStatus() !== "unknown") return;
     if (
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches
@@ -112,7 +118,7 @@ export function AppLoadingProvider({ children }: { children: React.ReactNode }) 
 
     let cancelled = false;
     const warm = () => {
-      if (cancelled || getCachedGifStatus() !== null) return;
+      if (cancelled || getCachedGifStatus() !== "unknown") return;
       const img = new window.Image();
       img.decoding = "async";
       img.onload = () => setCachedGifStatus("loaded");
@@ -125,13 +131,13 @@ export function AppLoadingProvider({ children }: { children: React.ReactNode }) 
       cancelIdleCallback?: (id: number) => void;
     };
     if (typeof win.requestIdleCallback === "function") {
-      const idleId = win.requestIdleCallback(warm, { timeout: 2500 });
+      const idleId = win.requestIdleCallback(warm, { timeout: 1200 });
       return () => {
         cancelled = true;
         win.cancelIdleCallback?.(idleId);
       };
     }
-    const timer = window.setTimeout(warm, 1500);
+    const timer = window.setTimeout(warm, 400);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -139,18 +145,19 @@ export function AppLoadingProvider({ children }: { children: React.ReactNode }) 
   }, []);
 
   // Fail-safe guard: if a network/server error causes a transition to stall
-  // without settling, unlock the screen instead of hanging forever.
+  // without settling, unlock the pre-commit flag instead of hanging forever.
   React.useEffect(() => {
-    if (!navActive) return;
+    if (!loadingActive) return;
     const timer = window.setTimeout(() => {
       stopRouteNavigation();
     }, DEFAULT_LOADING_SAFETY_TIMEOUT_MS);
     return () => window.clearTimeout(timer);
-  }, [navActive]);
+  }, [loadingActive]);
 
   const contextValue = React.useMemo<LoadingContextValue>(
     () => ({
-      isNavigationActive: isRouteNavigationActive,
+      isNavigationActive: isGlobalLoadingActive,
+      acquireSuspense: acquireSuspenseBoundary,
     }),
     [],
   );
@@ -161,7 +168,7 @@ export function AppLoadingProvider({ children }: { children: React.ReactNode }) 
       <Suspense fallback={null}>
         <NavigationWatcher />
       </Suspense>
-      <GlobalLoadingScreen active={navActive} managed />
+      <GlobalLoadingScreen active={loadingActive} managed />
     </LoadingContext.Provider>
   );
 }

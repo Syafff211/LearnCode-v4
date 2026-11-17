@@ -10,14 +10,15 @@ export const LOADING_GIF_SRC = "/loading.gif";
 export const LOADING_GIF_SIZE = 420;
 
 /**
- * Reveal delay so fast or prefetched transitions never flicker.
+ * Reveal delay so instant cached transitions never flicker, while genuine
+ * server-rendered navigations show the loading screen promptly.
  */
-export const DEFAULT_LOADING_DELAY_MS = 150;
+export const DEFAULT_LOADING_DELAY_MS = 80;
 
 /**
- * Fade-out duration for the managed loading overlay after navigation commits.
+ * Fade-out duration for the managed loading overlay after content is ready.
  */
-export const DEFAULT_LOADING_FADE_MS = 180;
+export const DEFAULT_LOADING_FADE_MS = 150;
 
 /**
  * Fail-safe circuit breaker if a client navigation stalls due to a network drop

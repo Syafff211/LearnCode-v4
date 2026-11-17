@@ -130,6 +130,65 @@ async function fetchCoursesFromDatabase(): Promise<CourseSummary[] | null> {
   }
 }
 
+export type TutorLessonSummaryOption = {
+  id: string;
+  title: string;
+  courseTitle: string;
+};
+
+export async function getTutorLessonOptions(): Promise<TutorLessonSummaryOption[]> {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const supabase = await createSupabaseServerClient();
+    const [coursesRes, lessonsRes] = await Promise.all([
+      supabase
+        .from("courses")
+        .select("id, title, position")
+        .eq("status", "published")
+        .order("position", { ascending: true }),
+      supabase
+        .from("lessons")
+        .select("id, course_id, title, position")
+        .eq("status", "published")
+        .order("position", { ascending: true }),
+    ]);
+
+    if (coursesRes.error || lessonsRes.error || !coursesRes.data || !lessonsRes.data) {
+      return [];
+    }
+
+    const courseById = new Map<string, { title: string; position: number }>();
+    for (const course of coursesRes.data) {
+      courseById.set(course.id as string, {
+        title: course.title as string,
+        position: Number(course.position ?? 0),
+      });
+    }
+
+    return lessonsRes.data
+      .map((lesson) => {
+        const course = courseById.get(lesson.course_id as string);
+        if (!course) return null;
+        return {
+          id: lesson.id as string,
+          title: lesson.title as string,
+          courseTitle: course.title,
+          coursePos: course.position,
+          lessonPos: Number(lesson.position ?? 0),
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      .sort((a, b) => a.coursePos - b.coursePos || a.lessonPos - b.lessonPos)
+      .map(({ id, title, courseTitle }) => ({ id, title, courseTitle }));
+  } catch (error) {
+    console.error(
+      "[catalog] tutor lesson options fallback",
+      error instanceof Error ? error.message : error,
+    );
+    return [];
+  }
+}
+
 export async function getCatalogCourses(): Promise<CourseSummary[]> {
   const databaseCourses = await fetchCoursesFromDatabase();
   if (databaseCourses) return databaseCourses;

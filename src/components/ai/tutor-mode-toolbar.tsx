@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import {
   BookOpen,
   Bug,
@@ -38,7 +39,7 @@ const modeIcons: Record<AiAction, LucideIcon> = {
   practice_suggestions: FlaskConical,
 };
 
-export function TutorModeToolbar({
+export const TutorModeToolbar = React.memo(function TutorModeToolbar({
   mode,
   lessonId,
   fixedLesson,
@@ -60,13 +61,16 @@ export function TutorModeToolbar({
   onLanguageChange: (language: "id" | "en") => void;
 }) {
   const activeFixedLesson = fixedLesson && lessonId === fixedLesson.id ? fixedLesson : null;
-  const selectedLesson = lessonOptions.find((lesson) => lesson.id === lessonId);
+  const selectedLesson = React.useMemo(
+    () => lessonOptions.find((lesson) => lesson.id === lessonId),
+    [lessonOptions, lessonId],
+  );
   const activeMeta = TUTOR_MODE_MAP[mode];
   const needsLessonNotice = mode === "explain_lesson" && !lessonId;
 
   return (
-    <div className="shrink-0 border-b border-line bg-canvas/95 px-3 py-2 sm:px-5">
-      <div className="mx-auto max-w-[50rem] space-y-1.5">
+    <div className="shrink-0 border-b border-line bg-canvas/95 px-3 py-1.5 sm:px-5">
+      <div className="mx-auto max-w-[50rem] space-y-1">
         <div className="flex items-center gap-1.5">
           <div
             role="group"
@@ -149,15 +153,15 @@ export function TutorModeToolbar({
           </DropdownMenu>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2.5 gap-y-1">
-            <p className="min-w-0 text-xs leading-snug text-muted">
+        <div className="flex flex-wrap items-center justify-between gap-x-2.5 gap-y-1">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+            <p className="hidden min-w-0 truncate text-xs leading-snug text-muted sm:block">
               <span className="font-medium text-ink-soft">{activeMeta.label}:</span>{" "}
               <span>{activeMeta.description}</span>
             </p>
 
             {activeFixedLesson ? (
-              <span className="inline-flex max-w-full items-center gap-1.5 rounded-[5px] border border-line bg-surface px-2 py-1 text-xs text-ink-soft">
+              <span className="inline-flex max-w-full items-center gap-1.5 rounded-[5px] border border-line bg-surface px-2 py-0.5 text-xs text-ink-soft">
                 <BookOpen className="size-3.5 shrink-0 text-accent-text" aria-hidden="true" />
                 <span className="truncate">Lesson: {activeFixedLesson.title}</span>
                 <button
@@ -175,13 +179,13 @@ export function TutorModeToolbar({
                 type="button"
                 onClick={() => onLessonChange(fixedLesson.id)}
                 disabled={disabled}
-                className="inline-flex min-h-8 items-center gap-1.5 rounded-[5px] border border-dashed border-line-strong px-2 py-1 text-xs text-muted hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
+                className="inline-flex min-h-7 items-center gap-1.5 rounded-[5px] border border-dashed border-line-strong px-2 py-0.5 text-xs text-muted hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
               >
                 <BookOpen className="size-3.5 text-accent-text" aria-hidden="true" />
                 Gunakan konteks lesson
               </button>
             ) : lessonOptions.length > 0 ? (
-              <label className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-xs text-muted">
+              <label className="inline-flex min-w-0 max-w-full flex-1 items-center gap-1.5 text-xs text-muted sm:flex-initial">
                 <BookOpen
                   className={cn(
                     "size-3.5 shrink-0",
@@ -196,7 +200,7 @@ export function TutorModeToolbar({
                   disabled={disabled}
                   aria-label="Konteks lesson"
                   className={cn(
-                    "h-8 max-w-[min(74vw,17rem)] truncate rounded-[5px] border bg-surface px-2 text-xs text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text disabled:opacity-60",
+                    "h-7 min-w-0 max-w-[min(48vw,16rem)] flex-1 truncate rounded-[5px] border bg-surface px-2 text-xs text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text disabled:opacity-60 sm:flex-initial",
                     needsLessonNotice ? "border-highlight/60" : "border-line",
                   )}
                 >
@@ -216,7 +220,7 @@ export function TutorModeToolbar({
           <div className="flex shrink-0 items-center gap-1.5">
             <span className="inline-flex items-center gap-1 text-xs text-muted">
               <Languages className="size-3.5 text-accent-text" aria-hidden="true" />
-              <span>Bahasa jawaban AI:</span>
+              <span className="sr-only sm:not-sr-only">Bahasa jawaban AI:</span>
             </span>
             <div
               role="group"
@@ -233,7 +237,7 @@ export function TutorModeToolbar({
                     aria-pressed={active}
                     disabled={disabled}
                     className={cn(
-                      "rounded-[4px] px-2 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text disabled:opacity-55 motion-reduce:transition-none",
+                      "rounded-[4px] px-2 py-0.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text disabled:opacity-55 motion-reduce:transition-none",
                       active
                         ? "bg-accent text-accent-ink"
                         : "text-muted hover:text-ink",
@@ -249,4 +253,4 @@ export function TutorModeToolbar({
       </div>
     </div>
   );
-}
+});

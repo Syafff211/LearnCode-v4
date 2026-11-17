@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { AlertTriangle, Ban, ChevronDown, Gauge } from "lucide-react";
 
 import {
@@ -11,7 +12,7 @@ import { Progress } from "@/components/ui/progress";
 import { getQuotaStatus } from "@/lib/ai/tutor-ui";
 import { cn } from "@/lib/utils";
 
-export function TutorQuotaControl({
+export const TutorQuotaControl = React.memo(function TutorQuotaControl({
   used,
   dailyLimit,
 }: {
@@ -135,4 +136,4 @@ export function TutorQuotaControl({
       </DropdownMenuContent>
     </DropdownMenu>
   );
-}
+});

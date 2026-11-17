@@ -4,35 +4,42 @@ import * as React from "react";
 
 export type LoadingContextValue = {
   isNavigationActive: () => boolean;
+  acquireSuspense: () => () => void;
 };
 
 export const LoadingContext = React.createContext<LoadingContextValue | null>(null);
 
 export type GifCacheStatus = "unknown" | "loaded" | "error";
 
-type NavigationListener = (active: boolean) => void;
+type LoadingListener = (active: boolean) => void;
 
-const navigationListeners = new Set<NavigationListener>();
+const loadingListeners = new Set<LoadingListener>();
 let committedPathname: string | null = null;
 let routeNavigationActive = false;
+let activeSuspenseCount = 0;
 let notifyQueued = false;
 
 let cachedGifStatus: GifCacheStatus = "unknown";
 
-function flushNavigationListeners(): void {
+export function isGlobalLoadingActive(): boolean {
+  return routeNavigationActive || activeSuspenseCount > 0;
+}
+
+function flushLoadingListeners(): void {
   notifyQueued = false;
-  for (const listener of navigationListeners) {
-    listener(routeNavigationActive);
+  const active = isGlobalLoadingActive();
+  for (const listener of loadingListeners) {
+    listener(active);
   }
 }
 
-function scheduleNavigationNotification(): void {
+function scheduleLoadingNotification(): void {
   if (notifyQueued) return;
   notifyQueued = true;
   if (typeof queueMicrotask === "function") {
-    queueMicrotask(flushNavigationListeners);
+    queueMicrotask(flushLoadingListeners);
   } else {
-    void Promise.resolve().then(flushNavigationListeners);
+    void Promise.resolve().then(flushLoadingListeners);
   }
 }
 
@@ -48,26 +55,43 @@ export function isRouteNavigationActive(): boolean {
   return routeNavigationActive;
 }
 
+export function getActiveSuspenseCount(): number {
+  return activeSuspenseCount;
+}
+
 export function startRouteNavigation(): void {
   if (routeNavigationActive) return;
   routeNavigationActive = true;
   // Defer notification via microtask so React state updates escape Next.js's
   // router startTransition batch and commit immediately while the new route loads.
-  scheduleNavigationNotification();
+  scheduleLoadingNotification();
 }
 
 export function stopRouteNavigation(): void {
   if (!routeNavigationActive) return;
   routeNavigationActive = false;
-  scheduleNavigationNotification();
+  scheduleLoadingNotification();
+}
+
+export function acquireSuspenseBoundary(): () => void {
+  activeSuspenseCount += 1;
+  scheduleLoadingNotification();
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    activeSuspenseCount = Math.max(0, activeSuspenseCount - 1);
+    scheduleLoadingNotification();
+  };
 }
 
 export function subscribeRouteNavigation(
-  listener: NavigationListener,
+  listener: LoadingListener,
 ): () => void {
-  navigationListeners.add(listener);
+  loadingListeners.add(listener);
   return () => {
-    navigationListeners.delete(listener);
+    loadingListeners.delete(listener);
   };
 }
 
@@ -83,5 +107,6 @@ export function clearLoadingMediaCache(): void {
   cachedGifStatus = "unknown";
   committedPathname = null;
   routeNavigationActive = false;
+  activeSuspenseCount = 0;
   notifyQueued = false;
 }

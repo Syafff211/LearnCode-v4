@@ -3,8 +3,12 @@ import { renderToStaticMarkup, renderToString } from "react-dom/server";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  acquireSuspenseBoundary,
   clearLoadingMediaCache,
+  getActiveSuspenseCount,
+  getCachedGifStatus,
   getCommittedPathname,
+  isGlobalLoadingActive,
   isRouteNavigationActive,
   setCachedGifStatus,
   setCommittedPathname,
@@ -31,9 +35,11 @@ beforeEach(() => {
 });
 
 describe("loading screen constants and helpers", () => {
-  it("uses public/loading.gif with intrinsic dimensions", () => {
+  it("uses public/loading.gif with intrinsic dimensions and unknown initial cache status", () => {
     expect(LOADING_GIF_SRC).toBe("/loading.gif");
     expect(LOADING_GIF_SIZE).toBe(420);
+    expect(DEFAULT_LOADING_DELAY_MS).toBe(80);
+    expect(getCachedGifStatus()).toBe("unknown");
   });
 
   it("normalizes pathnames consistently", () => {
@@ -243,14 +249,47 @@ describe("route transition state and Next.js instrumentation hook", () => {
       // Direct start/stop helpers toggle cleanly.
       startRouteNavigation();
       expect(isRouteNavigationActive()).toBe(true);
+      expect(isGlobalLoadingActive()).toBe(true);
       stopRouteNavigation();
       expect(isRouteNavigationActive()).toBe(false);
+      expect(isGlobalLoadingActive()).toBe(false);
     } finally {
       Object.defineProperty(globalThis, "window", {
         configurable: true,
         value: previousWindow,
       });
     }
+  });
+
+  it("keeps global loading active across early pathname switches until Suspense boundaries finish streaming", () => {
+    expect(isGlobalLoadingActive()).toBe(false);
+    expect(getActiveSuspenseCount()).toBe(0);
+
+    // 1. User clicks link -> route navigation begins.
+    startRouteNavigation();
+    expect(isGlobalLoadingActive()).toBe(true);
+
+    // 2. Prefetched Suspense shell mounts loading.tsx before server RSC finishes.
+    const releasePrimary = acquireSuspenseBoundary();
+    const releaseNested = acquireSuspenseBoundary();
+    expect(getActiveSuspenseCount()).toBe(2);
+
+    // 3. Next.js commits pathname early -> NavigationWatcher calls stopRouteNavigation().
+    //    Global loading MUST remain active because Suspense boundaries are still mounted!
+    stopRouteNavigation();
+    expect(isRouteNavigationActive()).toBe(false);
+    expect(isGlobalLoadingActive()).toBe(true);
+
+    // 4. Nested boundary finishes; primary still pending.
+    releaseNested();
+    releaseNested(); // idempotent cleanup must not decrement twice
+    expect(getActiveSuspenseCount()).toBe(1);
+    expect(isGlobalLoadingActive()).toBe(true);
+
+    // 5. Real page content arrives -> primary loading.tsx unmounts -> loading ends cleanly.
+    releasePrimary();
+    expect(getActiveSuspenseCount()).toBe(0);
+    expect(isGlobalLoadingActive()).toBe(false);
   });
 });
 

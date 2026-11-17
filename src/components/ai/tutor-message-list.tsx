@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ArrowDown, ArrowUpRight, Check, Copy, RotateCcw, Sparkles } from "lucide-react";
 
@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { TUTOR_QUICK_REPLIES } from "@/lib/ai/tutor-ui";
 import { cn } from "@/lib/utils";
 import type { TutorError, TutorMessage } from "@/components/ai/tutor-chat-types";
+
+const MARKDOWN_PLUGINS = [remarkGfm];
 
 function safeMarkdownUrl(url: string): string {
   const value = url.trim();
@@ -88,46 +90,162 @@ function CopyCodeBlock({ children }: { children: React.ReactNode }) {
   );
 }
 
-function MessageContent({ content }: { content: string }) {
+const MARKDOWN_COMPONENTS: Components = {
+  a: ({ children, href, ...props }) => {
+    const safeHref = href ? safeMarkdownUrl(href) : "";
+    if (!safeHref) return <span>{children}</span>;
+    return (
+      <a href={safeHref} target="_blank" rel="noopener noreferrer" {...props}>
+        {children}
+      </a>
+    );
+  },
+  img: ({ alt }) => (
+    <span className="inline-block rounded border border-line px-2 py-0.5 text-xs text-muted">
+      Gambar tidak dimuat{alt ? `: ${alt}` : ""}
+    </span>
+  ),
+  pre: ({ children }) => <CopyCodeBlock>{children}</CopyCodeBlock>,
+  table: ({ children }) => (
+    <div className="my-3 max-w-full overflow-x-auto rounded-[6px] border border-line">
+      <table>{children}</table>
+    </div>
+  ),
+};
+
+const MessageContent = React.memo(function MessageContent({ content }: { content: string }) {
   return (
     <div className="chat-prose min-w-0 max-w-full">
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={MARKDOWN_PLUGINS}
         urlTransform={safeMarkdownUrl}
-        components={{
-          a: ({ children, href, ...props }) => {
-            const safeHref = href ? safeMarkdownUrl(href) : "";
-            if (!safeHref) return <span>{children}</span>;
-            return (
-              <a href={safeHref} target="_blank" rel="noopener noreferrer" {...props}>
-                {children}
-              </a>
-            );
-          },
-          img: ({ alt }) => (
-            <span className="inline-block rounded border border-line px-2 py-0.5 text-xs text-muted">
-              Gambar tidak dimuat{alt ? `: ${alt}` : ""}
-            </span>
-          ),
-          pre: ({ children }) => <CopyCodeBlock>{children}</CopyCodeBlock>,
-          table: ({ children }) => (
-            <div className="my-3 max-w-full overflow-x-auto rounded-[6px] border border-line">
-              <table>{children}</table>
-            </div>
-          ),
-        }}
+        components={MARKDOWN_COMPONENTS}
       >
         {content}
       </ReactMarkdown>
     </div>
   );
-}
+});
+
+const TutorMessageRow = React.memo(function TutorMessageRow({
+  message,
+  isCopied,
+  onCopy,
+}: {
+  message: TutorMessage;
+  isCopied: boolean;
+  onCopy: (message: TutorMessage) => void;
+}) {
+  const isUser = message.role === "user";
+  const copyLabel = isCopied
+    ? "Pesan tersalin"
+    : isUser
+      ? "Salin pesan kamu"
+      : "Salin jawaban AI Tutor";
+
+  if (isUser) {
+    return (
+      <li className="group flex flex-col items-end">
+        <div className="mb-1 flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => onCopy(message)}
+            title={isCopied ? "Tersalin" : "Salin pesan"}
+            aria-label={copyLabel}
+            className={cn(
+              "inline-flex size-10 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
+              isCopied
+                ? "opacity-100 text-ok"
+                : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
+            )}
+          >
+            {isCopied ? (
+              <Check className="size-4" aria-hidden="true" />
+            ) : (
+              <Copy className="size-4" aria-hidden="true" />
+            )}
+          </button>
+          <span className="shrink-0 whitespace-nowrap text-xs font-semibold tracking-[0.04em] text-ink-soft">
+            Kamu
+          </span>
+        </div>
+        <div className="min-w-0 max-w-[min(42rem,92%)] rounded-[12px] border border-line bg-surface-2 px-4 py-3 text-[15px] leading-[1.65] text-ink">
+          <MessageContent content={message.content} />
+          {message.failed ? (
+            <p className="mt-2 text-xs font-medium text-danger">
+              Pesan belum terkirim · coba kirim ulang di bawah
+            </p>
+          ) : null}
+        </div>
+      </li>
+    );
+  }
+
+  return (
+    <li className="group flex flex-col items-start">
+      <div className="mb-1.5 flex w-full items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent-text">
+          <Sparkles className="size-3.5 shrink-0" aria-hidden="true" />
+          <span>LearnCode AI</span>
+        </span>
+        {message.content && !message.streaming ? (
+          <button
+            type="button"
+            onClick={() => onCopy(message)}
+            title={isCopied ? "Tersalin" : "Salin pesan"}
+            aria-label={copyLabel}
+            className={cn(
+              "inline-flex size-10 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
+              isCopied
+                ? "opacity-100 text-ok"
+                : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
+            )}
+          >
+            {isCopied ? (
+              <Check className="size-4" aria-hidden="true" />
+            ) : (
+              <Copy className="size-4" aria-hidden="true" />
+            )}
+          </button>
+        ) : null}
+      </div>
+      <div className="w-full min-w-0 border-l-2 border-accent/25 pl-3.5 sm:pl-4">
+        {message.content ? (
+          <MessageContent content={message.content} />
+        ) : message.streaming ? (
+          <div
+            className="inline-flex items-center gap-2 py-1 text-sm text-muted"
+            role="status"
+          >
+            <span className="flex items-center gap-1" aria-hidden="true">
+              <span className="size-1.5 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
+              <span className="size-1.5 animate-pulse rounded-full bg-accent [animation-delay:150ms] motion-reduce:animate-none" />
+              <span className="size-1.5 animate-pulse rounded-full bg-accent [animation-delay:300ms] motion-reduce:animate-none" />
+            </span>
+            <span>AI Tutor sedang menyusun jawaban…</span>
+          </div>
+        ) : null}
+        {message.streaming && message.content ? (
+          <span
+            className="mt-1 inline-block h-4 w-[2px] animate-pulse bg-accent align-middle motion-reduce:animate-none"
+            aria-hidden="true"
+          />
+        ) : null}
+        {message.stopped ? (
+          <p className="mt-2 text-xs font-medium text-muted">
+            Respons dihentikan oleh pengguna.
+          </p>
+        ) : null}
+      </div>
+    </li>
+  );
+});
 
 function prefersReducedMotion(): boolean {
   return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function TutorMessageList({
+export const TutorMessageList = React.memo(function TutorMessageList({
   messages,
   error,
   loading,
@@ -153,22 +271,39 @@ export function TutorMessageList({
   const scrollRef = React.useRef<HTMLDivElement | null>(null);
   const atBottomRef = React.useRef(true);
   const previousForceScrollRef = React.useRef(forceScrollVersion);
+  const scrollRafRef = React.useRef<number | null>(null);
   const [showLatest, setShowLatest] = React.useState(false);
 
-  React.useLayoutEffect(() => {
+  const anyStreaming = messages.some((entry) => Boolean(entry.streaming));
+
+  React.useEffect(() => {
     const node = scrollRef.current;
     if (!node) return;
 
     const forced = previousForceScrollRef.current !== forceScrollVersion;
     previousForceScrollRef.current = forceScrollVersion;
     if (forced) {
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+        scrollRafRef.current = null;
+      }
       node.scrollTo({ top: node.scrollHeight, behavior: prefersReducedMotion() ? "auto" : "smooth" });
       atBottomRef.current = true;
       setShowLatest(false);
     } else if (atBottomRef.current) {
-      node.scrollTop = node.scrollHeight;
+      if (scrollRafRef.current !== null) return;
+      scrollRafRef.current = requestAnimationFrame(() => {
+        scrollRafRef.current = null;
+        if (scrollRef.current && atBottomRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      });
     }
   }, [messages, error, forceScrollVersion]);
+
+  React.useEffect(() => () => {
+    if (scrollRafRef.current !== null) cancelAnimationFrame(scrollRafRef.current);
+  }, []);
 
   function handleScroll() {
     const node = scrollRef.current;
@@ -176,7 +311,10 @@ export function TutorMessageList({
     const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
     const atBottom = distanceFromBottom < 120;
     atBottomRef.current = atBottom;
-    setShowLatest(!atBottom && messages.length > 0);
+    setShowLatest((prev) => {
+      const next = !atBottom && messages.length > 0;
+      return prev === next ? prev : next;
+    });
   }
 
   return (
@@ -185,10 +323,10 @@ export function TutorMessageList({
         ref={scrollRef}
         onScroll={handleScroll}
         role="log"
-        aria-live="polite"
+        aria-live={anyStreaming ? "off" : "polite"}
         aria-relevant="additions"
         aria-label="Percakapan dengan LearnCode AI"
-        className="h-full min-h-0 overflow-y-auto overscroll-contain px-3 py-5 sm:px-6"
+        className="h-full min-h-0 overflow-y-auto overscroll-contain px-3 py-4 sm:px-6 sm:py-5"
       >
         {loading ? (
           <div className="mx-auto mb-4 flex max-w-[50rem] items-center rounded-[8px] border border-line bg-surface px-4 py-3">
@@ -197,7 +335,7 @@ export function TutorMessageList({
         ) : null}
 
         {messages.length === 0 && !loading ? (
-          <div className="mx-auto flex min-h-full max-w-[40rem] flex-col items-center justify-center py-6 text-center sm:py-10">
+          <div className="mx-auto flex min-h-full max-w-[40rem] flex-col items-center justify-center py-4 text-center sm:py-8">
             <span className="flex size-11 items-center justify-center rounded-full border border-line bg-surface shadow-xs">
               <Sparkles className="size-5 text-accent-text" aria-hidden="true" />
             </span>
@@ -228,113 +366,15 @@ export function TutorMessageList({
         ) : null}
 
         {messages.length > 0 ? (
-          <ol className="mx-auto flex max-w-[50rem] flex-col gap-6 pb-16">
-            {messages.map((message) => {
-              const isUser = message.role === "user";
-              const isCopied = copiedId === message.id;
-              const copyLabel = isCopied
-                ? "Pesan tersalin"
-                : isUser
-                  ? "Salin pesan kamu"
-                  : "Salin jawaban AI Tutor";
-
-              if (isUser) {
-                return (
-                  <li key={message.id} className="group flex flex-col items-end">
-                    <div className="mb-1 flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onCopy(message)}
-                        title={isCopied ? "Tersalin" : "Salin pesan"}
-                        aria-label={copyLabel}
-                        className={cn(
-                          "inline-flex size-10 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
-                          isCopied
-                            ? "opacity-100 text-ok"
-                            : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
-                        )}
-                      >
-                        {isCopied ? (
-                          <Check className="size-4" aria-hidden="true" />
-                        ) : (
-                          <Copy className="size-4" aria-hidden="true" />
-                        )}
-                      </button>
-                      <span className="shrink-0 whitespace-nowrap text-xs font-semibold tracking-[0.04em] text-ink-soft">
-                        Kamu
-                      </span>
-                    </div>
-                    <div className="min-w-0 max-w-[min(42rem,92%)] rounded-[12px] border border-line bg-surface-2 px-4 py-3 text-[15px] leading-[1.65] text-ink">
-                      <MessageContent content={message.content} />
-                      {message.failed ? (
-                        <p className="mt-2 text-xs font-medium text-danger">
-                          Pesan belum terkirim · coba kirim ulang di bawah
-                        </p>
-                      ) : null}
-                    </div>
-                  </li>
-                );
-              }
-
-              return (
-                <li key={message.id} className="group flex flex-col items-start">
-                  <div className="mb-1.5 flex w-full items-center justify-between gap-2">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-accent-text">
-                      <Sparkles className="size-3.5 shrink-0" aria-hidden="true" />
-                      <span>LearnCode AI</span>
-                    </span>
-                    {message.content && !message.streaming ? (
-                      <button
-                        type="button"
-                        onClick={() => onCopy(message)}
-                        title={isCopied ? "Tersalin" : "Salin pesan"}
-                        aria-label={copyLabel}
-                        className={cn(
-                          "inline-flex size-10 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface-2 hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
-                          isCopied
-                            ? "opacity-100 text-ok"
-                            : "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100",
-                        )}
-                      >
-                        {isCopied ? (
-                          <Check className="size-4" aria-hidden="true" />
-                        ) : (
-                          <Copy className="size-4" aria-hidden="true" />
-                        )}
-                      </button>
-                    ) : null}
-                  </div>
-                  <div className="w-full min-w-0 border-l-2 border-accent/25 pl-3.5 sm:pl-4">
-                    {message.content ? (
-                      <MessageContent content={message.content} />
-                    ) : message.streaming ? (
-                      <div
-                        className="inline-flex items-center gap-2 py-1 text-sm text-muted"
-                        role="status"
-                      >
-                        <span className="flex items-center gap-1" aria-hidden="true">
-                          <span className="size-1.5 animate-pulse rounded-full bg-accent motion-reduce:animate-none" />
-                          <span className="size-1.5 animate-pulse rounded-full bg-accent [animation-delay:150ms] motion-reduce:animate-none" />
-                          <span className="size-1.5 animate-pulse rounded-full bg-accent [animation-delay:300ms] motion-reduce:animate-none" />
-                        </span>
-                        <span>AI Tutor sedang menyusun jawaban…</span>
-                      </div>
-                    ) : null}
-                    {message.streaming && message.content ? (
-                      <span
-                        className="mt-1 inline-block h-4 w-[2px] animate-pulse bg-accent align-middle motion-reduce:animate-none"
-                        aria-hidden="true"
-                      />
-                    ) : null}
-                    {message.stopped ? (
-                      <p className="mt-2 text-xs font-medium text-muted">
-                        Respons dihentikan oleh pengguna.
-                      </p>
-                    ) : null}
-                  </div>
-                </li>
-              );
-            })}
+          <ol className="mx-auto flex max-w-[50rem] flex-col gap-5 pb-14 sm:gap-6 sm:pb-16">
+            {messages.map((message) => (
+              <TutorMessageRow
+                key={message.id}
+                message={message}
+                isCopied={copiedId === message.id}
+                onCopy={onCopy}
+              />
+            ))}
           </ol>
         ) : null}
 
@@ -388,4 +428,4 @@ export function TutorMessageList({
       </p>
     </div>
   );
-}
+});

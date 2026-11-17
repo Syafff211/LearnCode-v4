@@ -221,6 +221,30 @@ describe("AI Tutor SSR components", () => {
     expect(html).not.toContain("30/30");
   });
 
+  it("renders TutorComposer in isolated uncontrolled draft mode when message/code props are omitted", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(TutorComposer, {
+        onSubmitDraft: () => {},
+        mode: "explain_code",
+        streaming: false,
+        onStop: () => {},
+        aiConfigured: true,
+        used: 2,
+        dailyLimit: 30,
+        showCode: true,
+        onToggleCode: () => {},
+        initialCode: "<h1>Hello</h1>",
+        codeLanguage: "html",
+        onCodeLanguageChange: () => {},
+        formError: null,
+      }),
+    );
+
+    expect(html).toContain("<h1>Hello</h1>".replaceAll("<", "&lt;").replaceAll(">", "&gt;"));
+    expect(html).toContain("Kode terlampir (14)");
+    expect(html).toContain("Kirim");
+  });
+
   it("renders sidebar empty search state cleanly", () => {
     const html = renderToStaticMarkup(
       React.createElement(TutorConversationSidebar, {

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { TutorComposer } from "@/components/ai/tutor-composer";
+import { TutorComposer, type TutorComposerHandle } from "@/components/ai/tutor-composer";
 import { TutorConversationSidebar } from "@/components/ai/tutor-conversation-sidebar";
 import { TutorMessageList } from "@/components/ai/tutor-message-list";
 import { TutorModeToolbar } from "@/components/ai/tutor-mode-toolbar";
@@ -115,6 +115,9 @@ export function TutorChat({
   initialCodeLanguage?: "html" | "css" | "javascript";
   onClose?: () => void;
 }) {
+  const fixedLessonId = fixedLesson?.id ?? null;
+  const fixedLessonTitle = fixedLesson?.title ?? null;
+
   const router = useRouter();
   const pathname = usePathname();
   const [allConversations, setAllConversations] = React.useState(initialConversations);
@@ -122,11 +125,9 @@ export function TutorChat({
   const [activeId, setActiveId] = React.useState<string | null>(null);
   const [messages, setMessages] = React.useState<TutorMessage[]>([]);
   const [mode, setMode] = React.useState<AiAction>("free_chat");
-  const [message, setMessage] = React.useState("");
-  const [code, setCode] = React.useState(initialCode.slice(0, 8000));
   const [showCode, setShowCode] = React.useState(Boolean(initialCode));
   const [codeLanguage, setCodeLanguage] = React.useState<"html" | "css" | "javascript">(initialCodeLanguage);
-  const [lessonId, setLessonId] = React.useState<string | null>(fixedLesson?.id ?? defaultLessonId);
+  const [lessonId, setLessonId] = React.useState<string | null>(fixedLessonId ?? defaultLessonId);
   const [language, setLanguage] = React.useState<"id" | "en">(defaultLanguage);
   const [used, setUsed] = React.useState(Math.min(initialUsed, dailyLimit));
   const [streaming, setStreaming] = React.useState(false);
@@ -154,11 +155,17 @@ export function TutorChat({
   const requestGenerationRef = React.useRef(0);
   const conversationLoadGenerationRef = React.useRef(0);
   const conversationIdRef = React.useRef<string | null>(null);
+  const activeIdRef = React.useRef<string | null>(null);
   const lastUserMessageIdRef = React.useRef<string | null>(null);
-  const inputRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const composerRef = React.useRef<TutorComposerHandle | null>(null);
   const lastPayloadRef = React.useRef<TutorPayload | null>(null);
   const lastInitialCodeRef = React.useRef(initialCode);
   const manuallyRenamedIdsRef = React.useRef<Set<string>>(new Set());
+  const copyTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
 
   const remaining = Math.max(0, dailyLimit - used);
   const visibleConversations = conversationSearch.trim()
@@ -167,35 +174,41 @@ export function TutorChat({
 
   const lessonTitleById = React.useMemo(() => {
     const map = new Map<string, string>();
-    if (fixedLesson) map.set(fixedLesson.id, fixedLesson.title);
+    if (fixedLessonId && fixedLessonTitle) map.set(fixedLessonId, fixedLessonTitle);
     for (const option of lessonOptions) {
       map.set(option.id, option.title);
     }
     return map;
-  }, [fixedLesson, lessonOptions]);
+  }, [fixedLessonId, fixedLessonTitle, lessonOptions]);
 
   React.useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
+    if (autoFocus) composerRef.current?.focus();
   }, [autoFocus]);
 
   React.useEffect(() => {
-    const codeChanged = initialCode !== lastInitialCodeRef.current;
-    if (!codeChanged) return;
-    lastInitialCodeRef.current = initialCode;
-    setCode(initialCode.slice(0, 8000));
-    setShowCode(Boolean(initialCode));
+    if (initialCode !== lastInitialCodeRef.current) {
+      lastInitialCodeRef.current = initialCode;
+      composerRef.current?.setCode(initialCode);
+      setShowCode(Boolean(initialCode));
+    }
   }, [initialCode]);
 
+  // Only refresh quota on bfcache restore; initialUsed is already fresh from SSR.
   React.useEffect(() => {
     let alive = true;
-    fetch("/api/ai/usage", { cache: "no-store" })
-      .then(async (response) => (response.ok ? response.json() : null))
-      .then((data: { used?: number } | null) => {
-        if (alive && typeof data?.used === "number") setUsed(Math.min(data.used, dailyLimit));
-      })
-      .catch(() => undefined);
+    function onPageShow(event: PageTransitionEvent) {
+      if (!event.persisted) return;
+      fetch("/api/ai/usage", { cache: "no-store" })
+        .then(async (response) => (response.ok ? response.json() : null))
+        .then((data: { used?: number } | null) => {
+          if (alive && typeof data?.used === "number") setUsed(Math.min(data.used, dailyLimit));
+        })
+        .catch(() => undefined);
+    }
+    window.addEventListener("pageshow", onPageShow);
     return () => {
       alive = false;
+      window.removeEventListener("pageshow", onPageShow);
     };
   }, [dailyLimit]);
 
@@ -246,9 +259,10 @@ export function TutorChat({
     requestGenerationRef.current += 1;
     conversationLoadGenerationRef.current += 1;
     abortRef.current?.abort();
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
   }, []);
 
-  function setSearch(value: string) {
+  const setSearch = React.useCallback((value: string) => {
     const next = value.slice(0, 80);
     setConversationSearch(next);
     if (!next.trim()) {
@@ -256,96 +270,105 @@ export function TutorChat({
       setHistoryError(null);
       setHistorySearching(false);
     }
-  }
+  }, []);
 
-  function updateConversation(conversation: TutorConversation) {
-    setAllConversations((current) => {
-      const found = current.some((entry) => entry.id === conversation.id);
-      const next = found
-        ? current.map((entry) => (entry.id === conversation.id ? conversation : entry))
-        : [conversation, ...current];
-      return next.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-    });
-    setSearchResults((current) => {
-      if (!current) return current;
-      const found = current.some((entry) => entry.id === conversation.id);
-      if (found) {
-        return current
-          .map((entry) => (entry.id === conversation.id ? conversation : entry))
-          .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-      }
-      const search = conversationSearch.trim().toLocaleLowerCase();
-      if (search && !conversation.title.toLocaleLowerCase().includes(search)) return current;
-      return [conversation, ...current].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-    });
-  }
+  const updateConversation = React.useCallback(
+    (conversation: TutorConversation) => {
+      setAllConversations((current) => {
+        const found = current.some((entry) => entry.id === conversation.id);
+        const next = found
+          ? current.map((entry) => (entry.id === conversation.id ? conversation : entry))
+          : [conversation, ...current];
+        return next.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+      });
+      setSearchResults((current) => {
+        if (!current) return current;
+        const found = current.some((entry) => entry.id === conversation.id);
+        if (found) {
+          return current
+            .map((entry) => (entry.id === conversation.id ? conversation : entry))
+            .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+        }
+        const search = conversationSearch.trim().toLocaleLowerCase();
+        if (search && !conversation.title.toLocaleLowerCase().includes(search)) return current;
+        return [conversation, ...current].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+      });
+    },
+    [conversationSearch],
+  );
 
-  function removeConversation(id: string) {
+  const removeConversation = React.useCallback((id: string) => {
     setAllConversations((current) => current.filter((entry) => entry.id !== id));
     setSearchResults((current) => current?.filter((entry) => entry.id !== id) ?? null);
-  }
+  }, []);
 
-  function beginLoginRedirect() {
+  const beginLoginRedirect = React.useCallback(() => {
     router.push(`/login?next=${encodeURIComponent(pathname || "/ai-tutor")}`);
-  }
+  }, [pathname, router]);
 
-  async function loadConversation(id: string) {
-    if (streaming || loadingConversation) return;
-    const loadGeneration = conversationLoadGenerationRef.current + 1;
-    conversationLoadGenerationRef.current = loadGeneration;
-    setLoadingConversation(true);
-    setError(null);
-    setFormError(null);
-    try {
-      const response = await fetch(`/api/ai/conversations/${id}`, { cache: "no-store" });
-      const payload = await response.json().catch(() => null);
-      if (conversationLoadGenerationRef.current !== loadGeneration) return;
-      if (response.status === 401) {
-        beginLoginRedirect();
+  const loadConversation = React.useCallback(
+    async (id: string) => {
+      if (streaming || loadingConversation) return;
+      const loadGeneration = conversationLoadGenerationRef.current + 1;
+      conversationLoadGenerationRef.current = loadGeneration;
+      setLoadingConversation(true);
+      setError(null);
+      setFormError(null);
+      try {
+        const response = await fetch(`/api/ai/conversations/${id}`, { cache: "no-store" });
+        const payload = await response.json().catch(() => null);
+        if (conversationLoadGenerationRef.current !== loadGeneration) return;
+        if (response.status === 401) {
+          beginLoginRedirect();
+          return;
+        }
+        if (!response.ok) {
+          throw new Error(payload?.error?.message ?? "Percakapan belum bisa dimuat.");
+        }
+
+        const conversation = payload?.conversation as TutorConversation | undefined;
+        if (!conversation?.id || !Array.isArray(payload?.messages)) {
+          throw new Error("Data percakapan belum lengkap.");
+        }
+        conversationIdRef.current = conversation.id;
+        setActiveId(conversation.id);
+        updateConversation(conversation);
+        setMessages(
+          (payload.messages as TutorMessage[]).map((entry) => ({
+            id: entry.id,
+            role: entry.role,
+            content: entry.content,
+            created_at: entry.created_at,
+          })),
+        );
+        setLessonId(conversation.lesson_id ?? fixedLessonId);
+        lastPayloadRef.current = null;
+        lastUserMessageIdRef.current = null;
+        setForceScrollVersion((version) => version + 1);
+        setHistoryOpen(false);
+      } catch (loadError) {
+        if (conversationLoadGenerationRef.current === loadGeneration) {
+          toast.error(loadError instanceof Error ? loadError.message : "Percakapan belum bisa dimuat.");
+        }
+      } finally {
+        if (conversationLoadGenerationRef.current === loadGeneration) setLoadingConversation(false);
+      }
+    },
+    [beginLoginRedirect, fixedLessonId, loadingConversation, streaming, updateConversation],
+  );
+
+  const openRenameDialog = React.useCallback(
+    (conversation: TutorConversation) => {
+      if (streaming && activeIdRef.current === conversation.id) {
+        toast.error("Hentikan respons sebelum mengubah nama percakapan yang sedang aktif.");
         return;
       }
-      if (!response.ok) {
-        throw new Error(payload?.error?.message ?? "Percakapan belum bisa dimuat.");
-      }
-
-      const conversation = payload?.conversation as TutorConversation | undefined;
-      if (!conversation?.id || !Array.isArray(payload?.messages)) {
-        throw new Error("Data percakapan belum lengkap.");
-      }
-      conversationIdRef.current = conversation.id;
-      setActiveId(conversation.id);
-      updateConversation(conversation);
-      setMessages(
-        (payload.messages as TutorMessage[]).map((entry) => ({
-          id: entry.id,
-          role: entry.role,
-          content: entry.content,
-          created_at: entry.created_at,
-        })),
-      );
-      setLessonId(conversation.lesson_id ?? (fixedLesson?.id ?? null));
-      lastPayloadRef.current = null;
-      lastUserMessageIdRef.current = null;
-      setForceScrollVersion((version) => version + 1);
-      setHistoryOpen(false);
-    } catch (loadError) {
-      if (conversationLoadGenerationRef.current === loadGeneration) {
-        toast.error(loadError instanceof Error ? loadError.message : "Percakapan belum bisa dimuat.");
-      }
-    } finally {
-      if (conversationLoadGenerationRef.current === loadGeneration) setLoadingConversation(false);
-    }
-  }
-
-  function openRenameDialog(conversation: TutorConversation) {
-    if (streaming && activeId === conversation.id) {
-      toast.error("Hentikan respons sebelum mengubah nama percakapan yang sedang aktif.");
-      return;
-    }
-    setRenameTarget(conversation);
-    setRenameInput(conversation.title);
-    setRenameError(null);
-  }
+      setRenameTarget(conversation);
+      setRenameInput(conversation.title);
+      setRenameError(null);
+    },
+    [streaming],
+  );
 
   async function submitRenameDialog(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -384,13 +407,44 @@ export function TutorChat({
     }
   }
 
-  function openDeleteDialog(conversation: TutorConversation) {
-    if (streaming && activeId === conversation.id) {
-      toast.error("Hentikan respons sebelum menghapus percakapan yang sedang aktif.");
-      return;
-    }
-    setDeleteTarget(conversation);
-  }
+  const openDeleteDialog = React.useCallback(
+    (conversation: TutorConversation) => {
+      if (streaming && activeIdRef.current === conversation.id) {
+        toast.error("Hentikan respons sebelum menghapus percakapan yang sedang aktif.");
+        return;
+      }
+      setDeleteTarget(conversation);
+    },
+    [streaming],
+  );
+
+  const startNewChat = React.useCallback(() => {
+    requestGenerationRef.current += 1;
+    conversationLoadGenerationRef.current += 1;
+    abortRef.current?.abort();
+    abortRef.current = null;
+    conversationIdRef.current = null;
+    lastPayloadRef.current = null;
+    lastUserMessageIdRef.current = null;
+    setActiveId(null);
+    setMessages([]);
+    setMode("free_chat");
+    setError(null);
+    setFormError(null);
+    setStreaming(false);
+    setLoadingConversation(false);
+    setHistoryOpen(false);
+    setConversationSearch("");
+    setSearchResults(null);
+    setHistoryError(null);
+    setHistorySearching(false);
+    composerRef.current?.setCode("");
+    setShowCode(false);
+    setCodeLanguage("html");
+    setLessonId(fixedLessonId ?? defaultLessonId);
+    setForceScrollVersion((version) => version + 1);
+    composerRef.current?.focus();
+  }, [defaultLessonId, fixedLessonId]);
 
   async function confirmDeleteConversation() {
     if (!deleteTarget || deleting) return;
@@ -425,261 +479,153 @@ export function TutorChat({
     }
   }
 
-  function startNewChat() {
-    requestGenerationRef.current += 1;
-    conversationLoadGenerationRef.current += 1;
-    abortRef.current?.abort();
-    abortRef.current = null;
-    conversationIdRef.current = null;
-    lastPayloadRef.current = null;
-    lastUserMessageIdRef.current = null;
-    setActiveId(null);
-    setMessages([]);
-    setMode("free_chat");
-    setError(null);
-    setFormError(null);
-    setStreaming(false);
-    setLoadingConversation(false);
-    setHistoryOpen(false);
-    setConversationSearch("");
-    setSearchResults(null);
-    setHistoryError(null);
-    setHistorySearching(false);
-    setCode("");
-    setShowCode(false);
-    setCodeLanguage("html");
-    setLessonId(fixedLesson?.id ?? defaultLessonId);
-    setForceScrollVersion((version) => version + 1);
-    inputRef.current?.focus();
-  }
-
-  function chooseMode(next: AiAction) {
+  const chooseMode = React.useCallback((next: AiAction) => {
     setMode(next);
     setFormError(null);
     if (codeActions.has(next)) setShowCode(true);
-    inputRef.current?.focus();
-  }
+    composerRef.current?.focus();
+  }, []);
 
-  function handleRemaining(value: number | undefined) {
-    if (typeof value === "number" && Number.isFinite(value)) {
-      setUsed(Math.min(dailyLimit, Math.max(0, dailyLimit - value)));
-    }
-  }
-
-  function restoreDraft(draft: string) {
-    if (!draft.trim()) return;
-    setMessage((current) => (current.trim().length === 0 ? draft : current));
-  }
-
-  async function persistRefinedTitle(conversationId: string, refinedTitle: string) {
-    if (manuallyRenamedIdsRef.current.has(conversationId)) return;
-    try {
-      const response = await fetch(`/api/ai/conversations/${conversationId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ title: refinedTitle }),
-      });
-      if (!response.ok) return;
-      const payload = await response.json().catch(() => null);
-      if (payload?.conversation && !manuallyRenamedIdsRef.current.has(conversationId)) {
-        updateConversation(payload.conversation as TutorConversation);
+  const handleRemaining = React.useCallback(
+    (value: number | undefined) => {
+      if (typeof value === "number" && Number.isFinite(value)) {
+        setUsed(Math.min(dailyLimit, Math.max(0, dailyLimit - value)));
       }
-    } catch {
-      // Non-blocking: backend already saved initial title cleanly.
-    }
-  }
+    },
+    [dailyLimit],
+  );
 
-  async function send(retry = false, messageOverride?: string) {
-    if (streaming || !aiConfigured) return;
-
-    const previousDraft = messageOverride ?? message;
-    let payload: TutorPayload;
-    if (retry && lastPayloadRef.current) {
-      payload = lastPayloadRef.current;
-    } else {
-      const rawMessage = (messageOverride ?? message).trim();
-      const action = mode;
-      const currentLessonId = lessonId;
-      if (codeActions.has(action) && !code.trim()) {
-        setFormError("Lampirkan kode terlebih dahulu untuk mode ini.");
-        setShowCode(true);
-        return;
-      }
-      if (action === "explain_lesson" && !currentLessonId) {
-        setFormError("Pilih konteks lesson terlebih dahulu.");
-        return;
-      }
-      if (action === "free_chat" && !rawMessage) {
-        setFormError("Tulis pertanyaan terlebih dahulu.");
-        inputRef.current?.focus();
-        return;
-      }
-      if (action === "hint" && !rawMessage && !code.trim()) {
-        setFormError("Tulis latihan yang ingin diberi hint atau lampirkan kodenya.");
-        inputRef.current?.focus();
-        return;
-      }
-      if (remaining <= 0) {
-        setFormError("Kuota AI harian sudah habis. Coba lagi besok.");
-        return;
-      }
-
-      let effectiveMessage = rawMessage;
-      if (action === "explain_lesson" && !effectiveMessage) {
-        effectiveMessage =
-          language === "en"
-            ? "Explain the main idea of this lesson in simple terms, with a small example."
-            : "Jelaskan inti lesson ini dengan bahasa sederhana dan satu contoh kecil.";
-      } else if (action === "practice_suggestions" && !effectiveMessage) {
-        effectiveMessage =
-          language === "en"
-            ? "Suggest three small practice tasks for my current level."
-            : "Berikan tiga saran latihan kecil yang sesuai dengan level saya.";
-      }
-
-      payload = {
-        action,
-        message: effectiveMessage,
-        code: code.trim(),
-        codeLanguage,
-        lessonId: currentLessonId,
-        language,
-      };
-    }
-
-    setFormError(null);
-    setError(null);
-    lastPayloadRef.current = payload;
-
-    const lessonTitle =
-      fixedLesson?.title ??
-      lessonOptions.find((entry) => entry.id === payload.lessonId)?.title ??
-      null;
-    const userContent =
-      [
-        payload.message,
-        payload.code ? `\`\`\`${payload.codeLanguage}\n${payload.code}\n\`\`\`` : "",
-      ]
-        .filter(Boolean)
-        .join("\n\n") ||
-      (payload.action === "explain_lesson"
-        ? `Jelaskan lesson ${lessonTitle ?? "ini"}.`
-        : "Permintaan bantuan AI");
-
-    const userId = retry ? lastUserMessageIdRef.current ?? newId() : newId();
-    if (!retry) lastUserMessageIdRef.current = userId;
-    const assistantId = newId();
-    const conversationAtStart = activeId;
-    const requestId = requestGenerationRef.current + 1;
-    requestGenerationRef.current = requestId;
-    const controller = new AbortController();
-    abortRef.current = controller;
-    let streamedContent = "";
-    let streamFailed = false;
-    let streamDone = false;
-    let pendingTitleUpdate: { id: string; title: string } | null = null;
-    const draftToRestore = previousDraft;
-
-    function discardUnsavedNewConversation() {
-      if (conversationAtStart || !conversationIdRef.current) return;
-      const unsavedId = conversationIdRef.current;
-      removeConversation(unsavedId);
-      setActiveId(null);
-      conversationIdRef.current = null;
-    }
-
-    if (!retry) {
-      setMessages((current) => [
-        ...current,
-        {
-          id: userId,
-          role: "user",
-          content: userContent,
-          created_at: new Date().toISOString(),
-        },
-        {
-          id: assistantId,
-          role: "assistant",
-          content: "",
-          created_at: new Date().toISOString(),
-          streaming: true,
-        },
-      ]);
-      if (!messageOverride) setMessage("");
-    } else {
-      if (message.trim() === payload.message.trim()) setMessage("");
-      setMessages((current) => [
-        ...current
-          .filter((entry) => !entry.streaming)
-          .map((entry) => (entry.failed ? { ...entry, failed: false } : entry)),
-        {
-          id: assistantId,
-          role: "assistant",
-          content: "",
-          created_at: new Date().toISOString(),
-          streaming: true,
-        },
-      ]);
-    }
-    setForceScrollVersion((version) => version + 1);
-    setStreaming(true);
-
-    function restoreFailedTurn() {
-      if (!messageOverride) restoreDraft(draftToRestore);
-      setMessages((current) =>
-        current
-          .filter((entry) => entry.id !== assistantId || entry.content.length > 0)
-          .map((entry) => {
-            if (entry.id === userId) return { ...entry, failed: true };
-            if (entry.id === assistantId) return { ...entry, streaming: false };
-            return entry;
-          }),
-      );
-    }
-
-    function handleEvent(eventText: string) {
-      if (requestGenerationRef.current !== requestId) return;
-      const dataLines = eventText
-        .split(/\r?\n/)
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).replace(/^ /, ""));
-      if (dataLines.length === 0) return;
-
-      let parsed: StreamEvent;
+  const persistRefinedTitle = React.useCallback(
+    async (conversationId: string, refinedTitle: string) => {
+      if (manuallyRenamedIdsRef.current.has(conversationId)) return;
       try {
-        parsed = JSON.parse(dataLines.join("\n")) as StreamEvent;
+        const response = await fetch(`/api/ai/conversations/${conversationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ title: refinedTitle }),
+        });
+        if (!response.ok) return;
+        const payload = await response.json().catch(() => null);
+        if (payload?.conversation && !manuallyRenamedIdsRef.current.has(conversationId)) {
+          updateConversation(payload.conversation as TutorConversation);
+        }
       } catch {
-        return;
+        // Non-blocking: backend already saved initial title cleanly.
+      }
+    },
+    [updateConversation],
+  );
+
+  const send = React.useCallback(
+    async (
+      retry = false,
+      draftOverride?: { message?: string; code?: string },
+    ) => {
+      if (streaming || !aiConfigured) return;
+
+      const currentDraft = composerRef.current?.getDraft() ?? { message: "", code: "" };
+      const messageOverride = draftOverride?.message;
+      const previousDraft = messageOverride ?? currentDraft.message;
+      const activeCode = draftOverride?.code ?? currentDraft.code;
+
+      let payload: TutorPayload;
+      if (retry && lastPayloadRef.current) {
+        payload = lastPayloadRef.current;
+      } else {
+        const rawMessage = previousDraft.trim();
+        const action = mode;
+        const currentLessonId = lessonId;
+        if (codeActions.has(action) && !activeCode.trim()) {
+          setFormError("Lampirkan kode terlebih dahulu untuk mode ini.");
+          setShowCode(true);
+          return;
+        }
+        if (action === "explain_lesson" && !currentLessonId) {
+          setFormError("Pilih konteks lesson terlebih dahulu.");
+          return;
+        }
+        if (action === "free_chat" && !rawMessage) {
+          setFormError("Tulis pertanyaan terlebih dahulu.");
+          composerRef.current?.focus();
+          return;
+        }
+        if (action === "hint" && !rawMessage && !activeCode.trim()) {
+          setFormError("Tulis latihan yang ingin diberi hint atau lampirkan kodenya.");
+          composerRef.current?.focus();
+          return;
+        }
+        if (remaining <= 0) {
+          setFormError("Kuota AI harian sudah habis. Coba lagi besok.");
+          return;
+        }
+
+        let effectiveMessage = rawMessage;
+        if (action === "explain_lesson" && !effectiveMessage) {
+          effectiveMessage =
+            language === "en"
+              ? "Explain the main idea of this lesson in simple terms, with a small example."
+              : "Jelaskan inti lesson ini dengan bahasa sederhana dan satu contoh kecil.";
+        } else if (action === "practice_suggestions" && !effectiveMessage) {
+          effectiveMessage =
+            language === "en"
+              ? "Suggest three small practice tasks for my current level."
+              : "Berikan tiga saran latihan kecil yang sesuai dengan level saya.";
+        }
+
+        payload = {
+          action,
+          message: effectiveMessage,
+          code: activeCode.trim(),
+          codeLanguage,
+          lessonId: currentLessonId,
+          language,
+        };
       }
 
-      if (parsed.type === "start") {
-        handleRemaining(parsed.remaining);
-        if (parsed.conversationId) {
-          conversationIdRef.current = parsed.conversationId;
-          setActiveId(parsed.conversationId);
-          const descriptiveTitle = deriveDescriptiveTitle({
-            rawTitle: parsed.title,
-            message: payload.message,
-            code: payload.code,
-            codeLanguage: payload.codeLanguage,
-            mode: payload.action,
-            lessonTitle,
-          });
-          if (!conversationAtStart && parsed.title !== descriptiveTitle) {
-            pendingTitleUpdate = { id: parsed.conversationId, title: descriptiveTitle };
-          }
-          updateConversation({
-            id: parsed.conversationId,
-            title: descriptiveTitle,
-            updated_at: new Date().toISOString(),
-            lesson_id: payload.lessonId,
-          });
+      setFormError(null);
+      setError(null);
+      lastPayloadRef.current = payload;
+
+      const lessonTitle =
+        fixedLessonTitle ??
+        lessonOptions.find((entry) => entry.id === payload.lessonId)?.title ??
+        null;
+      const userContent =
+        [
+          payload.message,
+          payload.code ? `\`\`\`${payload.codeLanguage}\n${payload.code}\n\`\`\`` : "",
+        ]
+          .filter(Boolean)
+          .join("\n\n") ||
+        (payload.action === "explain_lesson"
+          ? `Jelaskan lesson ${lessonTitle ?? "ini"}.`
+          : "Permintaan bantuan AI");
+
+      const userId = retry ? lastUserMessageIdRef.current ?? newId() : newId();
+      if (!retry) lastUserMessageIdRef.current = userId;
+      const assistantId = newId();
+      const conversationAtStart = activeIdRef.current;
+      const requestId = requestGenerationRef.current + 1;
+      requestGenerationRef.current = requestId;
+      const controller = new AbortController();
+      abortRef.current = controller;
+      let streamedContent = "";
+      let streamFailed = false;
+      let streamDone = false;
+      let pendingTitleUpdate: { id: string; title: string } | null = null;
+      let deltaRafId: number | null = null;
+      const draftToRestore = previousDraft;
+
+      function cancelDeltaRaf() {
+        if (deltaRafId !== null) {
+          cancelAnimationFrame(deltaRafId);
+          deltaRafId = null;
         }
       }
 
-      if (parsed.type === "delta" && typeof parsed.text === "string") {
-        streamedContent += parsed.text;
+      function flushDeltaSync() {
+        cancelDeltaRaf();
         setMessages((current) =>
           current.map((entry) =>
             entry.id === assistantId ? { ...entry, content: streamedContent } : entry,
@@ -687,265 +633,458 @@ export function TutorChat({
         );
       }
 
-      if (parsed.type === "done") {
-        streamDone = true;
-        handleRemaining(parsed.remaining);
+      function scheduleDeltaFlush() {
+        if (deltaRafId !== null) return;
+        deltaRafId = requestAnimationFrame(() => {
+          deltaRafId = null;
+          if (requestGenerationRef.current !== requestId) return;
+          setMessages((current) =>
+            current.map((entry) =>
+              entry.id === assistantId ? { ...entry, content: streamedContent } : entry,
+            ),
+          );
+        });
+      }
+
+      function discardUnsavedNewConversation() {
+        if (conversationAtStart || !conversationIdRef.current) return;
+        const unsavedId = conversationIdRef.current;
+        removeConversation(unsavedId);
+        setActiveId(null);
+        conversationIdRef.current = null;
+      }
+
+      if (!retry) {
+        setMessages((current) => [
+          ...current,
+          {
+            id: userId,
+            role: "user",
+            content: userContent,
+            created_at: new Date().toISOString(),
+          },
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "",
+            created_at: new Date().toISOString(),
+            streaming: true,
+          },
+        ]);
+        if (!messageOverride) composerRef.current?.setMessage("");
+      } else {
+        if (currentDraft.message.trim() === payload.message.trim()) {
+          composerRef.current?.setMessage("");
+        }
+        setMessages((current) => [
+          ...current
+            .filter((entry) => !entry.streaming)
+            .map((entry) => (entry.failed ? { ...entry, failed: false } : entry)),
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "",
+            created_at: new Date().toISOString(),
+            streaming: true,
+          },
+        ]);
+      }
+      setForceScrollVersion((version) => version + 1);
+      setStreaming(true);
+
+      function restoreFailedTurn() {
+        cancelDeltaRaf();
+        if (!messageOverride) composerRef.current?.restoreMessageIfEmpty(draftToRestore);
         setMessages((current) =>
-          current.map((entry) =>
-            entry.id === assistantId
-              ? { ...entry, streaming: false }
-              : entry.id === userId
-                ? { ...entry, failed: false }
-                : entry,
-          ),
+          current
+            .filter((entry) => entry.id !== assistantId || entry.content.length > 0)
+            .map((entry) => {
+              if (entry.id === userId) return { ...entry, failed: true };
+              if (entry.id === assistantId) return { ...entry, streaming: false };
+              return entry;
+            }),
         );
-        const completedId = parsed.conversationId ?? conversationIdRef.current ?? conversationAtStart;
-        if (parsed.saved === false) {
-          discardUnsavedNewConversation();
-          if (streamedContent.length > 0) {
-            setError({
-              code: "persistence_failed",
-              message:
-                "Jawaban selesai, tetapi riwayat percakapan tidak tersimpan. Salin jawaban sebelum meninggalkan halaman.",
-              retryable: false,
+      }
+
+      function handleEvent(eventText: string) {
+        if (requestGenerationRef.current !== requestId) return;
+        const dataLines = eventText
+          .split(/\r?\n/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).replace(/^ /, ""));
+        if (dataLines.length === 0) return;
+
+        let parsed: StreamEvent;
+        try {
+          parsed = JSON.parse(dataLines.join("\n")) as StreamEvent;
+        } catch {
+          return;
+        }
+
+        if (parsed.type === "start") {
+          handleRemaining(parsed.remaining);
+          if (parsed.conversationId) {
+            conversationIdRef.current = parsed.conversationId;
+            setActiveId(parsed.conversationId);
+            const descriptiveTitle = deriveDescriptiveTitle({
+              rawTitle: parsed.title,
+              message: payload.message,
+              code: payload.code,
+              codeLanguage: payload.codeLanguage,
+              mode: payload.action,
+              lessonTitle,
+            });
+            if (!conversationAtStart && parsed.title !== descriptiveTitle) {
+              pendingTitleUpdate = { id: parsed.conversationId, title: descriptiveTitle };
+            }
+            updateConversation({
+              id: parsed.conversationId,
+              title: descriptiveTitle,
+              updated_at: new Date().toISOString(),
+              lesson_id: payload.lessonId,
             });
           }
-        } else if (completedId) {
-          if (pendingTitleUpdate && pendingTitleUpdate.id === completedId) {
-            void persistRefinedTitle(completedId, pendingTitleUpdate.title);
-            pendingTitleUpdate = null;
-          } else {
-            const current = allConversations.find((entry) => entry.id === completedId);
-            if (current) updateConversation({ ...current, updated_at: new Date().toISOString() });
+        }
+
+        if (parsed.type === "delta" && typeof parsed.text === "string") {
+          streamedContent += parsed.text;
+          scheduleDeltaFlush();
+        }
+
+        if (parsed.type === "done") {
+          streamDone = true;
+          cancelDeltaRaf();
+          handleRemaining(parsed.remaining);
+          setMessages((current) =>
+            current.map((entry) =>
+              entry.id === assistantId
+                ? { ...entry, content: streamedContent, streaming: false }
+                : entry.id === userId
+                  ? { ...entry, failed: false }
+                  : entry,
+            ),
+          );
+          const completedId =
+            parsed.conversationId ?? conversationIdRef.current ?? conversationAtStart;
+          if (parsed.saved === false) {
+            discardUnsavedNewConversation();
+            if (streamedContent.length > 0) {
+              setError({
+                code: "persistence_failed",
+                message:
+                  "Jawaban selesai, tetapi riwayat percakapan tidak tersimpan. Salin jawaban sebelum meninggalkan halaman.",
+                retryable: false,
+              });
+            }
+          } else if (completedId) {
+            if (pendingTitleUpdate && pendingTitleUpdate.id === completedId) {
+              void persistRefinedTitle(completedId, pendingTitleUpdate.title);
+              pendingTitleUpdate = null;
+            } else {
+              const nowIso = new Date().toISOString();
+              setAllConversations((current) => {
+                const target = current.find((entry) => entry.id === completedId);
+                if (!target) return current;
+                return current
+                  .map((entry) =>
+                    entry.id === completedId ? { ...entry, updated_at: nowIso } : entry,
+                  )
+                  .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+              });
+            }
           }
+        }
+
+        if (parsed.type === "error") {
+          streamFailed = true;
+          cancelDeltaRaf();
+          handleRemaining(parsed.remaining);
+          if (parsed.code === "quota_exceeded") setUsed(dailyLimit);
+          if (parsed.saved === false) discardUnsavedNewConversation();
+          if (streamedContent.length === 0) {
+            restoreFailedTurn();
+          } else {
+            setMessages((current) =>
+              current.map((entry) =>
+                entry.id === assistantId
+                  ? { ...entry, content: streamedContent, streaming: false }
+                  : entry.id === userId
+                    ? { ...entry, failed: false }
+                    : entry,
+              ),
+            );
+          }
+          setError({
+            code: parsed.code ?? "stream_error",
+            message: `${parsed.message ?? "Jawaban AI terputus. Coba lagi."}${
+              parsed.saved === false && streamedContent.length > 0
+                ? " Respons parsial ini tidak tersimpan di riwayat."
+                : ""
+            }`,
+            retryable: parsed.retryable ?? true,
+          });
         }
       }
 
-      if (parsed.type === "error") {
-        streamFailed = true;
-        handleRemaining(parsed.remaining);
-        if (parsed.code === "quota_exceeded") setUsed(dailyLimit);
-        if (parsed.saved === false) discardUnsavedNewConversation();
+      try {
+        const endpoint = actionEndpoints[payload.action] ?? "/api/ai/chat";
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          cache: "no-store",
+          body: JSON.stringify({
+            action: payload.action,
+            message: payload.message || undefined,
+            code: payload.code || undefined,
+            codeLanguage: payload.codeLanguage,
+            lessonId: payload.lessonId || undefined,
+            conversationId: conversationAtStart || undefined,
+            language: payload.language,
+          }),
+        });
+        if (requestGenerationRef.current !== requestId) return;
+
+        const remainingHeader = response.headers.get("x-ai-remaining");
+        if (remainingHeader !== null && remainingHeader !== "") {
+          const value = Number(remainingHeader);
+          if (Number.isFinite(value)) handleRemaining(value);
+        }
+
+        if (!response.ok) {
+          const body = await response.json().catch(() => null);
+          if (requestGenerationRef.current !== requestId) return;
+          const apiError = body?.error as { code?: string; message?: string } | undefined;
+          if (response.status === 401) {
+            restoreFailedTurn();
+            beginLoginRedirect();
+            return;
+          }
+          restoreFailedTurn();
+          const retryable =
+            !nonRetryableApiErrors.has(apiError?.code ?? "") &&
+            (response.status >= 500 || response.status === 429);
+          setError({
+            code: apiError?.code ?? "request_failed",
+            message: apiError?.message ?? "Permintaan AI belum berhasil. Coba lagi.",
+            retryable,
+          });
+          if (apiError?.code === "quota_exceeded") setUsed(dailyLimit);
+          return;
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) throw new Error("Streaming tidak didukung browser ini.");
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          buffer = buffer.replace(/\r\n/g, "\n");
+          const events = buffer.split("\n\n");
+          buffer = events.pop() ?? "";
+          for (const event of events) handleEvent(event);
+        }
+
+        buffer += decoder.decode();
+        const finalEvent = buffer.trim();
+        if (finalEvent) handleEvent(finalEvent);
+        if (requestGenerationRef.current !== requestId) return;
+
+        cancelDeltaRaf();
+        if (!streamDone && !streamFailed) {
+          if (streamedContent.length === 0) {
+            restoreFailedTurn();
+            setError({
+              code: "empty_response",
+              message: "AI tidak mengembalikan teks. Coba kirim ulang pertanyaanmu.",
+              retryable: true,
+            });
+          } else {
+            flushDeltaSync();
+            setMessages((current) =>
+              current.map((entry) =>
+                entry.id === assistantId
+                  ? { ...entry, content: streamedContent, streaming: false }
+                  : entry,
+              ),
+            );
+            setError({
+              code: "stream_interrupted",
+              message: "Jawaban terputus sebelum selesai. Kamu bisa mencoba lagi.",
+              retryable: true,
+            });
+          }
+        } else if (streamDone && streamedContent.length === 0) {
+          setMessages((current) =>
+            current.map((entry) =>
+              entry.id === assistantId
+                ? { ...entry, streaming: false, content: "AI tidak mengembalikan teks." }
+                : entry.id === userId
+                  ? { ...entry, failed: true }
+                  : entry,
+            ),
+          );
+          setError({
+            code: "empty_response",
+            message: "AI tidak mengembalikan teks. Coba kirim ulang pertanyaanmu.",
+            retryable: true,
+          });
+        }
+      } catch (streamError) {
+        cancelDeltaRaf();
+        if (requestGenerationRef.current !== requestId) return;
+        const aborted = isAbortError(streamError);
         if (streamedContent.length === 0) {
           restoreFailedTurn();
         } else {
           setMessages((current) =>
             current.map((entry) =>
               entry.id === assistantId
-                ? { ...entry, streaming: false }
+                ? {
+                    ...entry,
+                    content: streamedContent,
+                    streaming: false,
+                    stopped: aborted,
+                  }
                 : entry.id === userId
                   ? { ...entry, failed: false }
                   : entry,
             ),
           );
         }
-        setError({
-          code: parsed.code ?? "stream_error",
-          message: `${parsed.message ?? "Jawaban AI terputus. Coba lagi."}${
-            parsed.saved === false && streamedContent.length > 0
-              ? " Respons parsial ini tidak tersimpan di riwayat."
-              : ""
-          }`,
-          retryable: parsed.retryable ?? true,
-        });
-      }
-    }
 
-    try {
-      const endpoint = actionEndpoints[payload.action] ?? "/api/ai/chat";
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: controller.signal,
-        cache: "no-store",
-        body: JSON.stringify({
-          action: payload.action,
-          message: payload.message || undefined,
-          code: payload.code || undefined,
-          codeLanguage: payload.codeLanguage,
-          lessonId: payload.lessonId || undefined,
-          conversationId: conversationAtStart || undefined,
-          language: payload.language,
-        }),
-      });
-      if (requestGenerationRef.current !== requestId) return;
-
-      const remainingHeader = response.headers.get("x-ai-remaining");
-      if (remainingHeader !== null && remainingHeader !== "") {
-        const value = Number(remainingHeader);
-        if (Number.isFinite(value)) handleRemaining(value);
-      }
-
-      if (!response.ok) {
-        const body = await response.json().catch(() => null);
-        if (requestGenerationRef.current !== requestId) return;
-        const apiError = body?.error as { code?: string; message?: string } | undefined;
-        if (response.status === 401) {
-          restoreFailedTurn();
-          beginLoginRedirect();
-          return;
+        if (aborted) {
+          if (!conversationAtStart && streamedContent.length === 0 && conversationIdRef.current) {
+            removeConversation(conversationIdRef.current);
+            setActiveId(null);
+            conversationIdRef.current = null;
+          }
+        } else if (!streamFailed) {
+          setError({
+            code: "network_error",
+            message: "Koneksi ke AI terputus. Periksa jaringan lalu coba lagi.",
+            retryable: true,
+          });
         }
-        restoreFailedTurn();
-        const retryable =
-          !nonRetryableApiErrors.has(apiError?.code ?? "") &&
-          (response.status >= 500 || response.status === 429);
-        setError({
-          code: apiError?.code ?? "request_failed",
-          message: apiError?.message ?? "Permintaan AI belum berhasil. Coba lagi.",
-          retryable,
-        });
-        if (apiError?.code === "quota_exceeded") setUsed(dailyLimit);
+      } finally {
+        cancelDeltaRaf();
+        if (requestGenerationRef.current === requestId) {
+          setStreaming(false);
+          if (abortRef.current === controller) abortRef.current = null;
+        }
+      }
+    },
+    [
+      aiConfigured,
+      beginLoginRedirect,
+      codeLanguage,
+      dailyLimit,
+      fixedLessonTitle,
+      handleRemaining,
+      language,
+      lessonId,
+      lessonOptions,
+      mode,
+      persistRefinedTitle,
+      remaining,
+      removeConversation,
+      streaming,
+      updateConversation,
+    ],
+  );
+
+  const handleQuickReply = React.useCallback(
+    (suggestion: string) => {
+      if (streaming || !aiConfigured) return;
+      if (remaining <= 0) {
+        setFormError("Kuota AI harian sudah habis. Coba lagi besok.");
         return;
       }
-
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error("Streaming tidak didukung browser ini.");
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        buffer = buffer.replace(/\r\n/g, "\n");
-        const events = buffer.split("\n\n");
-        buffer = events.pop() ?? "";
-        for (const event of events) handleEvent(event);
+      const currentCode = composerRef.current?.getDraft().code ?? "";
+      if (codeActions.has(mode) && !currentCode.trim()) {
+        composerRef.current?.setMessage(suggestion);
+        setShowCode(true);
+        setFormError("Lampirkan kode terlebih dahulu agar AI dapat menjalankan mode ini.");
+        return;
       }
-
-      buffer += decoder.decode();
-      const finalEvent = buffer.trim();
-      if (finalEvent) handleEvent(finalEvent);
-      if (requestGenerationRef.current !== requestId) return;
-
-      if (!streamDone && !streamFailed) {
-        if (streamedContent.length === 0) {
-          restoreFailedTurn();
-          setError({
-            code: "empty_response",
-            message: "AI tidak mengembalikan teks. Coba kirim ulang pertanyaanmu.",
-            retryable: true,
-          });
-        } else {
-          setMessages((current) =>
-            current.map((entry) =>
-              entry.id === assistantId ? { ...entry, streaming: false } : entry,
-            ),
-          );
-          setError({
-            code: "stream_interrupted",
-            message: "Jawaban terputus sebelum selesai. Kamu bisa mencoba lagi.",
-            retryable: true,
-          });
-        }
-      } else if (streamDone && streamedContent.length === 0) {
-        setMessages((current) =>
-          current.map((entry) =>
-            entry.id === assistantId
-              ? { ...entry, streaming: false, content: "AI tidak mengembalikan teks." }
-              : entry.id === userId
-                ? { ...entry, failed: true }
-                : entry,
-          ),
-        );
-        setError({
-          code: "empty_response",
-          message: "AI tidak mengembalikan teks. Coba kirim ulang pertanyaanmu.",
-          retryable: true,
-        });
+      if (mode === "explain_lesson" && !lessonId) {
+        composerRef.current?.setMessage(suggestion);
+        setFormError("Pilih konteks lesson terlebih dahulu pada toolbar di atas.");
+        return;
       }
-    } catch (streamError) {
-      if (requestGenerationRef.current !== requestId) return;
-      const aborted = isAbortError(streamError);
-      if (streamedContent.length === 0) {
-        restoreFailedTurn();
-      } else {
-        setMessages((current) =>
-          current.map((entry) =>
-            entry.id === assistantId
-              ? { ...entry, streaming: false, stopped: aborted }
-              : entry.id === userId
-                ? { ...entry, failed: false }
-                : entry,
-          ),
-        );
-      }
+      void send(false, { message: suggestion, code: currentCode });
+    },
+    [aiConfigured, lessonId, mode, remaining, send, streaming],
+  );
 
-      if (aborted) {
-        if (!conversationAtStart && streamedContent.length === 0 && conversationIdRef.current) {
-          removeConversation(conversationIdRef.current);
-          setActiveId(null);
-          conversationIdRef.current = null;
-        }
-      } else if (!streamFailed) {
-        setError({
-          code: "network_error",
-          message: "Koneksi ke AI terputus. Periksa jaringan lalu coba lagi.",
-          retryable: true,
-        });
-      }
-    } finally {
-      if (requestGenerationRef.current === requestId) {
-        setStreaming(false);
-        if (abortRef.current === controller) abortRef.current = null;
-      }
-    }
-  }
-
-  function handleQuickReply(suggestion: string) {
-    if (streaming || !aiConfigured) return;
-    if (remaining <= 0) {
-      setFormError("Kuota AI harian sudah habis. Coba lagi besok.");
-      return;
-    }
-    if (codeActions.has(mode) && !code.trim()) {
-      setMessage(suggestion);
-      setShowCode(true);
-      setFormError("Lampirkan kode terlebih dahulu agar AI dapat menjalankan mode ini.");
-      return;
-    }
-    if (mode === "explain_lesson" && !lessonId) {
-      setMessage(suggestion);
-      setFormError("Pilih konteks lesson terlebih dahulu pada toolbar di atas.");
-      return;
-    }
-    void send(false, suggestion);
-  }
-
-  async function copyMessage(entry: TutorMessage) {
+  const copyMessage = React.useCallback(async (entry: TutorMessage) => {
     try {
       await navigator.clipboard.writeText(entry.content);
       setCopiedId(entry.id);
-      window.setTimeout(() => setCopiedId((current) => (current === entry.id ? null : current)), 1500);
+      if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = setTimeout(
+        () => setCopiedId((current) => (current === entry.id ? null : current)),
+        1500,
+      );
     } catch {
       toast.error("Clipboard tidak tersedia di browser ini.");
     }
-  }
+  }, []);
 
-  function onNewChat() {
+  const onNewChat = React.useCallback(() => {
     startNewChat();
-    if (embedded) inputRef.current?.focus();
-  }
+    if (embedded) composerRef.current?.focus();
+  }, [embedded, startNewChat]);
 
-  const sidebarProps = {
-    conversations: visibleConversations,
-    activeId,
-    lessonTitleById,
-    search: conversationSearch,
-    loading: historySearching,
-    error: historyError,
-    onSearch: setSearch,
-    onSelect: (id: string) => {
+  const handleSelectConversation = React.useCallback(
+    (id: string) => {
       if (streaming) {
         toast.error("Hentikan respons sebelum beralih ke percakapan lain.");
         return;
       }
       void loadConversation(id);
     },
-    onNew: onNewChat,
-    onOpenRename: openRenameDialog,
-    onOpenDelete: openDeleteDialog,
-  };
+    [loadConversation, streaming],
+  );
+
+  const handleLessonChange = React.useCallback((id: string | null) => {
+    setLessonId(id);
+    setFormError(null);
+  }, []);
+
+  const handleToggleCode = React.useCallback(() => {
+    setShowCode((current) => !current);
+  }, []);
+
+  const handleStop = React.useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const handleSubmitDraft = React.useCallback(
+    (draft: { message: string; code: string }) => {
+      void send(false, draft);
+    },
+    [send],
+  );
+
+  const handleRetry = React.useCallback(() => {
+    void send(true);
+  }, [send]);
+
+  const handleDismissError = React.useCallback(() => {
+    setError(null);
+  }, []);
+
+  const handleClearFormError = React.useCallback(() => {
+    setFormError(null);
+  }, []);
+
+  const handleCloseMobileDrawer = React.useCallback(() => {
+    setHistoryOpen(false);
+  }, []);
 
   const showHeaderNewChat = embedded || !sidebarOpen;
   const BrandHeading = embedded ? "p" : "h1";
@@ -1046,7 +1185,20 @@ export function TutorChat({
             className="hidden w-[17rem] shrink-0 border-r border-line lg:flex"
             aria-label="Riwayat percakapan"
           >
-            <TutorConversationSidebar {...sidebarProps} idPrefix="desktop" />
+            <TutorConversationSidebar
+              idPrefix="desktop"
+              conversations={visibleConversations}
+              activeId={activeId}
+              lessonTitleById={lessonTitleById}
+              search={conversationSearch}
+              loading={historySearching}
+              error={historyError}
+              onSearch={setSearch}
+              onSelect={handleSelectConversation}
+              onNew={onNewChat}
+              onOpenRename={openRenameDialog}
+              onOpenDelete={openDeleteDialog}
+            />
           </aside>
         ) : null}
 
@@ -1059,10 +1211,7 @@ export function TutorChat({
             language={language}
             disabled={streaming}
             onModeChange={chooseMode}
-            onLessonChange={(id) => {
-              setLessonId(id);
-              setFormError(null);
-            }}
+            onLessonChange={handleLessonChange}
             onLanguageChange={setLanguage}
           />
           <TutorMessageList
@@ -1073,34 +1222,26 @@ export function TutorChat({
             forceScrollVersion={forceScrollVersion}
             canQuickReply={aiConfigured && remaining > 0 && !streaming}
             onCopy={copyMessage}
-            onRetry={() => void send(true)}
-            onDismissError={() => setError(null)}
+            onRetry={handleRetry}
+            onDismissError={handleDismissError}
             onQuickReply={handleQuickReply}
           />
           <TutorComposer
-            message={message}
-            onMessageChange={(value) => {
-              setMessage(value);
-              if (formError) setFormError(null);
-            }}
-            onSubmit={() => void send()}
+            composerRef={composerRef}
+            onSubmitDraft={handleSubmitDraft}
             mode={mode}
             streaming={streaming}
-            onStop={() => abortRef.current?.abort()}
+            onStop={handleStop}
             aiConfigured={aiConfigured}
             used={used}
             dailyLimit={dailyLimit}
             showCode={showCode}
-            onToggleCode={() => setShowCode((current) => !current)}
-            code={code}
-            onCodeChange={(value) => {
-              setCode(value);
-              if (formError) setFormError(null);
-            }}
+            onToggleCode={handleToggleCode}
+            initialCode={initialCode}
             codeLanguage={codeLanguage}
             onCodeLanguageChange={setCodeLanguage}
-            inputRef={inputRef}
             formError={formError}
+            onClearFormError={handleClearFormError}
           />
         </div>
       </div>
@@ -1118,9 +1259,19 @@ export function TutorChat({
               </DialogDescription>
             </DialogHeader>
             <TutorConversationSidebar
-              {...sidebarProps}
               idPrefix="mobile"
-              onCloseDrawer={() => setHistoryOpen(false)}
+              conversations={visibleConversations}
+              activeId={activeId}
+              lessonTitleById={lessonTitleById}
+              search={conversationSearch}
+              loading={historySearching}
+              error={historyError}
+              onSearch={setSearch}
+              onSelect={handleSelectConversation}
+              onNew={onNewChat}
+              onOpenRename={openRenameDialog}
+              onOpenDelete={openDeleteDialog}
+              onCloseDrawer={handleCloseMobileDrawer}
             />
           </DialogContent>
         </Dialog>
