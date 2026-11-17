@@ -20,6 +20,9 @@ import { cn } from "@/lib/utils";
 
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? React.useLayoutEffect : React.useEffect;
+
 function subscribeReducedMotion(onStoreChange: () => void): () => void {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
     return () => {};
@@ -55,7 +58,7 @@ export function usePrefersReducedMotion(): boolean {
 export type GlobalLoadingScreenProps = {
   /** Whether the loading screen is active. Defaults to true for Next.js loading.tsx boundaries. */
   active?: boolean;
-  /** Anti-flicker reveal delay in ms. Defaults to 150ms. Pass 0 for immediate display. */
+  /** Anti-flicker reveal delay in ms. Defaults to 80ms. Pass 0 for immediate display. */
   delayMs?: number;
   /** Render full-viewport overlay (default) or fill the nearest positioned container. */
   fullscreen?: boolean;
@@ -87,12 +90,14 @@ export function GlobalLoadingScreen({
   const reducedMotion = usePrefersReducedMotion();
   const effectiveDelayMs = Math.max(0, delayMs);
 
-  // If AppLoadingProvider already initiated this client route navigation,
-  // Suspense `loading.tsx` boundaries yield to the single managed root overlay
-  // so two loading screens never overlap and the GIF never restarts mid-transition.
-  const [yieldToManaged] = React.useState<boolean>(() =>
-    Boolean(!managed && ctx?.isNavigationActive()),
-  );
+  // When rendered inside a Next.js `loading.tsx` Suspense boundary wrapped by
+  // AppLoadingProvider, register this boundary so the single managed overlay
+  // stays visible for the entire duration of the Suspense wait (without
+  // overlapping or restarting the GIF), even after `usePathname()` updates early.
+  useIsomorphicLayoutEffect(() => {
+    if (managed || !ctx || !active) return;
+    return ctx.acquireSuspense();
+  }, [managed, ctx, active]);
 
   const [prevActive, setPrevActive] = React.useState(active);
   const [revealed, setRevealed] = React.useState(
@@ -133,7 +138,7 @@ export function GlobalLoadingScreen({
 
   if (managed) {
     if (!active && !closing) return null;
-  } else if (!active || yieldToManaged) {
+  } else if (!active || ctx !== null) {
     return null;
   }
 
@@ -141,6 +146,7 @@ export function GlobalLoadingScreen({
   const mediaKind: LoadingMediaKind = useFallback ? "fallback" : "gif";
   const isDelayed = effectiveDelayMs > 0 && (!managed || !closing);
   const stateAttr = managed && !active && closing ? "closing" : "open";
+  const revealedAttr = managed ? (revealed && stateAttr === "open" ? "true" : "false") : "true";
 
   return (
     <div
@@ -149,8 +155,10 @@ export function GlobalLoadingScreen({
       aria-busy={stateAttr === "open" ? "true" : "false"}
       aria-label="Memuat"
       data-loading-screen="true"
+      data-managed={managed ? "true" : "false"}
       data-media-kind={mediaKind}
       data-delayed={isDelayed ? "true" : "false"}
+      data-revealed={revealedAttr}
       data-state={stateAttr}
       data-contained={fullscreen ? "false" : "true"}
       style={

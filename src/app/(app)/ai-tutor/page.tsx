@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 
-import { TutorChat, type TutorConversation, type TutorLessonOption } from "@/components/ai/tutor-chat";
+import { TutorChat, type TutorConversation } from "@/components/ai/tutor-chat";
 import { getAiSettings } from "@/lib/ai/settings";
 import { requireProfile } from "@/lib/auth";
-import { getCatalogCourses } from "@/lib/data/courses";
+import { getTutorLessonOptions } from "@/lib/data/courses";
 import { isAIConfigured } from "@/lib/env";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -16,12 +15,11 @@ export const metadata: Metadata = {
 };
 
 export default async function AiTutorPage() {
-  const { user, profile } = await requireProfile("/ai-tutor");
-  const supabase = await createSupabaseServerClient();
-  const aiSettings = await getAiSettings();
+  const { user, profile, supabase } = await requireProfile("/ai-tutor");
 
   const today = new Date().toISOString().slice(0, 10);
-  const [conversationsRes, usageRes, courses] = await Promise.all([
+  const [aiSettings, conversationsRes, usageRes, lessonOptions] = await Promise.all([
+    getAiSettings(),
     supabase
       .from("ai_conversations")
       .select("id, title, updated_at, lesson_id")
@@ -34,7 +32,7 @@ export default async function AiTutorPage() {
       .eq("user_id", user.id)
       .eq("usage_date", today)
       .maybeSingle(),
-    getCatalogCourses(),
+    getTutorLessonOptions(),
   ]);
 
   const conversations: TutorConversation[] = (conversationsRes.data ?? []).map((row) => ({
@@ -44,20 +42,10 @@ export default async function AiTutorPage() {
     lesson_id: (row.lesson_id as string | null) ?? null,
   }));
 
-  const lessonOptions: TutorLessonOption[] = courses.flatMap((course) =>
-    course.lessons
-      .filter((lesson) => Boolean(lesson.id))
-      .map((lesson) => ({
-        id: lesson.id as string,
-        title: lesson.title,
-        courseTitle: course.title,
-      })),
-  );
-
   const modelLabel = aiSettings.model.split("/").at(-1)?.replaceAll("-", " ") ?? "Groq model";
 
   return (
-    <div className="h-[calc(100dvh-3.8125rem)] min-h-[28rem] overflow-hidden">
+    <div className="flex h-[calc(100dvh-3.8125rem)] min-h-0 flex-col overflow-hidden">
       <TutorChat
         initialConversations={conversations}
         lessonOptions={lessonOptions}

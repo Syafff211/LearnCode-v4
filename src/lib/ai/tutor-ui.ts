@@ -5,6 +5,7 @@ export type TutorModeMeta = {
   label: string;
   shortLabel: string;
   description: string;
+  placeholder: string;
   requiresCode?: boolean;
   requiresLesson?: boolean;
 };
@@ -15,12 +16,14 @@ export const TUTOR_MODES: TutorModeMeta[] = [
     label: "Tanya",
     shortLabel: "Tanya",
     description: "Tanyakan apa saja seputar pemrograman.",
+    placeholder: "Tanyakan HTML, CSS, atau JavaScript…",
   },
   {
     action: "explain_code",
     label: "Jelaskan kode",
     shortLabel: "Jelaskan kode",
     description: "Pahami cara kerja potongan kode.",
+    placeholder: "Tempel kode atau tanyakan bagian yang ingin dipahami…",
     requiresCode: true,
   },
   {
@@ -28,6 +31,7 @@ export const TUTOR_MODES: TutorModeMeta[] = [
     label: "Debug",
     shortLabel: "Debug",
     description: "Temukan dan perbaiki kesalahan kode.",
+    placeholder: "Tempel kode yang error atau ceritakan masalahnya…",
     requiresCode: true,
   },
   {
@@ -35,12 +39,14 @@ export const TUTOR_MODES: TutorModeMeta[] = [
     label: "Hint",
     shortLabel: "Hint",
     description: "Dapatkan petunjuk tanpa langsung diberikan jawaban.",
+    placeholder: "Ceritakan latihan yang membuatmu buntu…",
   },
   {
     action: "code_review",
     label: "Review",
     shortLabel: "Review",
     description: "Evaluasi kode dan dapatkan saran perbaikan.",
+    placeholder: "Bagian kode mana yang ingin dievaluasi?",
     requiresCode: true,
   },
   {
@@ -48,6 +54,7 @@ export const TUTOR_MODES: TutorModeMeta[] = [
     label: "Jelaskan lesson",
     shortLabel: "Jelaskan lesson",
     description: "Pelajari materi dari lesson yang dipilih.",
+    placeholder: "Bagian materi lesson mana yang ingin dipahami?",
     requiresLesson: true,
   },
   {
@@ -55,6 +62,7 @@ export const TUTOR_MODES: TutorModeMeta[] = [
     label: "Latihan",
     shortLabel: "Latihan",
     description: "Uji pemahaman melalui latihan pemrograman.",
+    placeholder: "Topik atau level latihan apa yang kamu inginkan?",
   },
 ];
 
@@ -62,16 +70,37 @@ export const TUTOR_MODE_MAP: Record<AiAction, TutorModeMeta> = Object.fromEntrie
   TUTOR_MODES.map((entry) => [entry.action, entry]),
 ) as Record<AiAction, TutorModeMeta>;
 
+export const TUTOR_PRIMARY_MODE_ACTIONS: readonly AiAction[] = [
+  "free_chat",
+  "explain_code",
+  "debug_code",
+  "hint",
+  "practice_suggestions",
+];
+
+export const TUTOR_OVERFLOW_MODE_ACTIONS: readonly AiAction[] = [
+  "code_review",
+  "explain_lesson",
+];
+
+export const TUTOR_PRIMARY_MODES: TutorModeMeta[] = TUTOR_PRIMARY_MODE_ACTIONS.map(
+  (action) => TUTOR_MODE_MAP[action],
+);
+
+export const TUTOR_OVERFLOW_MODES: TutorModeMeta[] = TUTOR_OVERFLOW_MODE_ACTIONS.map(
+  (action) => TUTOR_MODE_MAP[action],
+);
+
 export const TUTOR_QUICK_REPLIES = [
-  "Saya ingin belajar HTML dari nol.",
-  "Apa perbedaan HTML dan CSS?",
-  "Bantu saya memahami JavaScript.",
-  "Jelaskan contoh kode sederhana.",
+  "Jelaskan flexbox",
+  "Apa itu closure?",
+  "Latihan JavaScript dasar",
+  "Debug kode saya",
 ] as const;
 
-export const TUTOR_LANGUAGES: { value: "id" | "en"; label: string }[] = [
-  { value: "id", label: "Indonesia" },
-  { value: "en", label: "English" },
+export const TUTOR_LANGUAGES: { value: "id" | "en"; label: string; fullLabel: string }[] = [
+  { value: "id", label: "ID", fullLabel: "Bahasa Indonesia" },
+  { value: "en", label: "EN", fullLabel: "English" },
 ];
 
 export type QuotaLevel = "normal" | "warning" | "exhausted";
@@ -101,11 +130,10 @@ export function getQuotaStatus(rawUsed: number, rawDailyLimit: number): QuotaSta
 
   if (remaining === 0) {
     level = "exhausted";
-    warningText =
-      "Kuota pesan harianmu sudah habis. Kamu tetap bisa membaca seluruh riwayat percakapan.";
+    warningText = `Kuota harian habis (${used}/${dailyLimit}). Riwayat tetap bisa dibaca.`;
   } else if (lowByAbsolute || lowByPercent) {
     level = "warning";
-    warningText = `Sisa kuota menipis (${remaining} pesan tersisa hari ini). Gunakan pertanyaan yang jelas dan terarah.`;
+    warningText = `Sisa kuota menipis (${remaining} pesan tersisa hari ini).`;
   }
 
   return {
