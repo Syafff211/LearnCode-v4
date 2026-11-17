@@ -1,81 +1,135 @@
 import * as React from "react";
 import { renderToStaticMarkup, renderToString } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
-import { LoadingIndicator, LoadingScreen } from "@/components/loading-screen";
+import {
+  clearLoadingMediaCache,
+  getCommittedPathname,
+  isRouteNavigationActive,
+  setCachedGifStatus,
+  setCommittedPathname,
+  startRouteNavigation,
+  stopRouteNavigation,
+} from "@/components/loading-context";
+import {
+  GlobalLoadingScreen,
+  LoadingIndicator,
+} from "@/components/loading-screen";
+import { onRouterTransitionStart } from "@/instrumentation-client";
 import {
   DEFAULT_LOADING_DELAY_MS,
+  LOADING_GIF_SIZE,
   LOADING_GIF_SRC,
-  LOADING_SCREEN_BACKGROUND,
-  LOADING_VIDEO_SRC,
-  getLoadingMediaSource,
-  getNextLoadingMediaFallback,
-  isDocumentReady,
+  isNavigationErrorAbort,
+  normalizePathname,
+  resolveTransitionPathname,
   shouldShowNavigationLoading,
 } from "@/lib/loading-screen";
 
-describe("loading media priority and fallback", () => {
-  it("prioritizes public/loading.mp4 over public/loading.gif", () => {
-    expect(LOADING_VIDEO_SRC).toBe("/loading.mp4");
+beforeEach(() => {
+  clearLoadingMediaCache();
+});
+
+describe("loading screen constants and helpers", () => {
+  it("uses public/loading.gif with intrinsic dimensions", () => {
     expect(LOADING_GIF_SRC).toBe("/loading.gif");
-    expect(getLoadingMediaSource("video")).toBe("/loading.mp4");
-    expect(getLoadingMediaSource("gif")).toBe("/loading.gif");
-    expect(getLoadingMediaSource("none")).toBeNull();
+    expect(LOADING_GIF_SIZE).toBe(420);
   });
 
-  it("falls back from video to gif and then to none", () => {
-    expect(getNextLoadingMediaFallback("video")).toBe("gif");
-    expect(getNextLoadingMediaFallback("gif")).toBe("none");
-    expect(getNextLoadingMediaFallback("none")).toBe("none");
+  it("normalizes pathnames consistently", () => {
+    expect(normalizePathname("/")).toBe("/");
+    expect(normalizePathname("/blog/")).toBe("/blog");
+    expect(normalizePathname("/learn/html-dasar/")).toBe("/learn/html-dasar");
+    expect(normalizePathname("")).toBe("/");
   });
 
-  it("reports document readiness accurately", () => {
-    expect(isDocumentReady("complete")).toBe(true);
-    expect(isDocumentReady("interactive")).toBe(false);
-    expect(isDocumentReady("loading")).toBe(false);
-    expect(isDocumentReady(undefined)).toBe(false);
+  it("detects navigation abort/network error messages cleanly", () => {
+    expect(isNavigationErrorAbort("ChunkLoadError: Loading chunk 123 failed")).toBe(true);
+    expect(isNavigationErrorAbort("TypeError: Failed to fetch")).toBe(true);
+    expect(isNavigationErrorAbort("Validation error: empty field")).toBe(false);
+    expect(isNavigationErrorAbort(undefined)).toBe(false);
   });
 });
 
 describe("navigation loading gating", () => {
   const origin = "https://learncode.web.id";
+  const currentPathname = "/courses";
   const currentHref = "https://learncode.web.id/courses";
 
-  it("enables loading only for genuine internal page transitions", () => {
+  it("allows genuine internal route transitions across static and dynamic routes", () => {
     expect(
-      shouldShowNavigationLoading({
-        href: "/dashboard",
-        currentHref,
+      resolveTransitionPathname({ href: "/blog", currentPathname: "/", origin }),
+    ).toBe("/blog");
+    expect(
+      resolveTransitionPathname({ href: "/ai-tutor", currentPathname: "/", origin }),
+    ).toBe("/ai-tutor");
+    expect(
+      resolveTransitionPathname({
+        href: "/blog/belajar-css-grid",
+        currentPathname: "/blog",
         origin,
       }),
-    ).toBe(true);
-
+    ).toBe("/blog/belajar-css-grid");
     expect(
-      shouldShowNavigationLoading({
-        href: "/learn/html-dasar",
-        currentHref,
+      resolveTransitionPathname({
+        href: "/courses/html-dasar",
+        currentPathname: "/courses",
         origin,
       }),
-    ).toBe(true);
-
+    ).toBe("/courses/html-dasar");
     expect(
-      shouldShowNavigationLoading({
-        href: "/courses?level=pemula",
-        currentHref,
+      resolveTransitionPathname({
+        href: "/learn/teks-tautan-gambar",
+        currentPathname: "/courses/html-dasar",
         origin,
       }),
-    ).toBe(true);
+    ).toBe("/learn/teks-tautan-gambar");
+    expect(
+      resolveTransitionPathname({
+        href: "/learn/formulir-aksesibilitas",
+        currentPathname: "/learn/teks-tautan-gambar",
+        origin,
+      }),
+    ).toBe("/learn/formulir-aksesibilitas");
   });
 
-  it("ignores same-route, hash-only, external, download, API, and modified clicks", () => {
+  it("ignores query-only and hash-only URL changes on the same route", () => {
+    expect(
+      resolveTransitionPathname({
+        href: "/courses?level=pemula",
+        currentPathname,
+        origin,
+      }),
+    ).toBeNull();
+    expect(
+      resolveTransitionPathname({
+        href: "?category=css",
+        currentPathname: "/blog",
+        origin,
+      }),
+    ).toBeNull();
+    expect(
+      resolveTransitionPathname({
+        href: "/courses#top",
+        currentPathname,
+        origin,
+      }),
+    ).toBeNull();
+    expect(
+      resolveTransitionPathname({
+        href: "#materi",
+        currentPathname: "/",
+        origin,
+      }),
+    ).toBeNull();
+  });
+
+  it("ignores same-route, external, non-page API/auth, download, and modified clicks", () => {
     expect(
       shouldShowNavigationLoading({ href: "/courses", currentHref, origin }),
     ).toBe(false);
     expect(
-      shouldShowNavigationLoading({ href: "/courses#top", currentHref, origin }),
-    ).toBe(false);
-    expect(
-      shouldShowNavigationLoading({ href: "#kursus", currentHref, origin }),
+      shouldShowNavigationLoading({ href: "/courses/", currentHref, origin }),
     ).toBe(false);
     expect(
       shouldShowNavigationLoading({
@@ -156,36 +210,97 @@ describe("navigation loading gating", () => {
   });
 });
 
-describe("LoadingScreen SSR output", () => {
-  it("renders centered #FAF9F5 overlay with video priority and zero visible text", () => {
-    const html = renderToStaticMarkup(React.createElement(LoadingScreen));
+describe("route transition state and Next.js instrumentation hook", () => {
+  it("tracks start/stop route state and clears pending state on rapid back navigation", () => {
+    const previousWindow = (globalThis as { window?: unknown }).window;
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      value: {
+        location: {
+          origin: "https://learncode.web.id",
+          pathname: "/blog",
+        },
+      },
+    });
+
+    try {
+      setCommittedPathname("/blog");
+      expect(getCommittedPathname()).toBe("/blog");
+      expect(isRouteNavigationActive()).toBe(false);
+
+      // Query-only transition never starts loading.
+      onRouterTransitionStart("/blog?filter=css");
+      expect(isRouteNavigationActive()).toBe(false);
+
+      // Genuine route transition starts loading.
+      onRouterTransitionStart("/blog/artikel-pertama");
+      expect(isRouteNavigationActive()).toBe(true);
+
+      // Browser back (traverse) back to committed /blog while pending stops loading immediately.
+      onRouterTransitionStart("https://learncode.web.id/blog");
+      expect(isRouteNavigationActive()).toBe(false);
+
+      // Direct start/stop helpers toggle cleanly.
+      startRouteNavigation();
+      expect(isRouteNavigationActive()).toBe(true);
+      stopRouteNavigation();
+      expect(isRouteNavigationActive()).toBe(false);
+    } finally {
+      Object.defineProperty(globalThis, "window", {
+        configurable: true,
+        value: previousWindow,
+      });
+    }
+  });
+});
+
+describe("GlobalLoadingScreen SSR output", () => {
+  it("renders centered loading.gif overlay using theme-aware CSS and zero visible text", () => {
+    const html = renderToStaticMarkup(React.createElement(GlobalLoadingScreen));
 
     expect(html).toContain('data-loading-screen="true"');
-    expect(html).toContain('data-media-kind="video"');
-    expect(html).toContain(`background-color:${LOADING_SCREEN_BACKGROUND}`);
-    expect(html).toContain(`src="${LOADING_VIDEO_SRC}"`);
+    expect(html).toContain('data-media-kind="gif"');
+    expect(html).toContain('class="loading-screen-overlay"');
+    expect(html).toContain(`src="${LOADING_GIF_SRC}"`);
+    expect(html).toContain(`width="${LOADING_GIF_SIZE}"`);
+    expect(html).toContain(`height="${LOADING_GIF_SIZE}"`);
     expect(html).toContain(`--loading-delay:${DEFAULT_LOADING_DELAY_MS}ms`);
     expect(html).toContain('data-delayed="true"');
+    expect(html).toContain('data-state="open"');
     expect(html).toContain('data-contained="false"');
+    // Theme-aware CSS controls backgroundColor (light #FAF9F5 / dark #121310) rather than inline hardcode.
+    expect(html).not.toContain("background-color:#FAF9F5");
 
-    // Strip tags to confirm no visible text, headings, or decorative labels are rendered.
+    const visibleText = html.replace(/<[^>]+>/g, "").trim();
+    expect(visibleText).toBe("");
+  });
+
+  it("renders safe static brand-mark fallback when loading.gif previously failed", () => {
+    setCachedGifStatus("error");
+    const html = renderToStaticMarkup(React.createElement(GlobalLoadingScreen));
+
+    expect(html).toContain('data-loading-screen="true"');
+    expect(html).toContain('data-media-kind="fallback"');
+    expect(html).not.toContain("<img");
+    expect(html).toContain("<svg");
+
     const visibleText = html.replace(/<[^>]+>/g, "").trim();
     expect(visibleText).toBe("");
   });
 
   it("renders nothing when inactive and supports immediate/contained props", () => {
     expect(
-      renderToString(React.createElement(LoadingScreen, { active: false })),
+      renderToString(React.createElement(GlobalLoadingScreen, { active: false })),
     ).toBe("");
 
     const immediateContained = renderToStaticMarkup(
-      React.createElement(LoadingScreen, { delayMs: 0, fullscreen: false }),
+      React.createElement(GlobalLoadingScreen, { delayMs: 0, fullscreen: false }),
     );
     expect(immediateContained).toContain('data-delayed="false"');
     expect(immediateContained).toContain('data-contained="true"');
   });
 
-  it("renders lightweight inline LoadingIndicator for small tasks", () => {
+  it("renders lightweight inline LoadingIndicator for small local states", () => {
     const html = renderToStaticMarkup(
       React.createElement(LoadingIndicator, { label: "Memuat editor…" }),
     );

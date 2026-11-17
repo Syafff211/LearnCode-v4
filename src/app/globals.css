@@ -463,7 +463,7 @@ button {
 
 .chat-prose {
   font-size: 0.9375rem;
-  line-height: 1.7;
+  line-height: 1.68;
   color: var(--lc-ink-soft);
   overflow-wrap: anywhere;
 }
@@ -489,8 +489,8 @@ button {
 
 .chat-prose ul,
 .chat-prose ol {
-  padding-left: 1.2em;
-  margin-block: 0.5em;
+  padding-left: 1.3em;
+  margin-block: 0.55em;
 }
 
 .chat-prose ul {
@@ -502,45 +502,100 @@ button {
 }
 
 .chat-prose li {
-  margin-block: 0.2em;
+  margin-block: 0.25em;
 }
 
 .chat-prose code:not(pre code) {
   font-family: var(--font-mono);
-  font-size: 0.82em;
+  font-size: 0.85em;
   background: var(--lc-surface-2);
   border: 1px solid var(--lc-line);
-  border-radius: 3px;
-  padding: 0.05em 0.3em;
+  border-radius: 4px;
+  padding: 0.08em 0.35em;
   color: var(--lc-ink);
 }
 
 .chat-prose pre {
   font-family: var(--font-mono);
-  font-size: 0.8rem;
+  font-size: 0.8125rem;
   line-height: 1.65;
   background: var(--lc-code-bg);
   border: 1px solid var(--lc-line);
   border-radius: 6px;
-  padding: 0.8rem 0.9rem;
+  padding: 0.85rem 0.95rem;
   overflow-x: auto;
   margin-block: 0.75em;
 }
 
-.chat-prose h1,
-.chat-prose h2,
+.chat-prose h1 {
+  color: var(--lc-ink);
+  font-weight: 650;
+  font-size: 1.1875rem;
+  line-height: 1.35;
+  margin-top: 1.15em;
+  margin-bottom: 0.35em;
+}
+
+.chat-prose h2 {
+  color: var(--lc-ink);
+  font-weight: 620;
+  font-size: 1.0625rem;
+  line-height: 1.4;
+  margin-top: 1.05em;
+  margin-bottom: 0.3em;
+}
+
 .chat-prose h3 {
   color: var(--lc-ink);
   font-weight: 600;
-  font-size: 1rem;
-  margin-top: 1em;
+  font-size: 0.96875rem;
+  line-height: 1.45;
+  margin-top: 0.95em;
+  margin-bottom: 0.25em;
 }
 
 .chat-prose blockquote {
-  border-left: 2px solid var(--lc-accent);
-  padding-left: 0.8em;
-  color: var(--lc-muted);
-  font-style: italic;
+  border-left: 3px solid var(--lc-accent);
+  background: var(--lc-surface-2);
+  border-radius: 0 6px 6px 0;
+  padding: 0.5em 0.85em;
+  color: var(--lc-ink-soft);
+}
+
+.chat-prose hr {
+  border: 0;
+  border-top: 1px solid var(--lc-line);
+  margin-block: 1em;
+}
+
+.chat-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.chat-prose th,
+.chat-prose td {
+  border: 1px solid var(--lc-line);
+  padding: 0.45rem 0.65rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.chat-prose th {
+  background: var(--lc-surface-2);
+  color: var(--lc-ink);
+  font-weight: 600;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 /* ---------------------------------------------------------------------------
@@ -856,7 +911,7 @@ button {
   to { opacity: 0; }
 }
 
-/* Official loading screen. Sits above normal UI & promotion popups (z-70)
+/* Official global loading screen. Sits above normal UI & promotion popups (z-70)
    and below the landing intro video (z-90) and skip link (z-100). */
 .loading-screen-overlay {
   position: fixed;
@@ -865,25 +920,35 @@ button {
   display: grid;
   place-items: center;
   padding: 1.5rem;
-  background-color: #faf9f5;
+  background-color: var(--lc-canvas, #faf9f5);
 }
 
 .loading-screen-overlay[data-contained="true"] {
   position: absolute;
 }
 
-.loading-screen-overlay[data-delayed="true"] {
+.loading-screen-overlay[data-state="open"][data-delayed="true"] {
   opacity: 0;
   pointer-events: none;
-  animation: loading-screen-reveal 160ms ease-out var(--loading-delay, 150ms) forwards;
+  animation: loading-screen-reveal 180ms ease-out var(--loading-delay, 150ms) forwards;
+}
+
+.loading-screen-overlay[data-state="open"][data-delayed="false"] {
+  animation: loading-screen-reveal 140ms ease-out both;
+}
+
+.loading-screen-overlay[data-state="closing"] {
+  pointer-events: none;
+  animation: loading-screen-hide 180ms ease-out forwards;
 }
 
 .loading-screen-media {
   display: block;
-  width: clamp(8.5rem, 26vw, 15rem);
+  width: clamp(7.5rem, 24vw, 13.5rem);
   height: auto;
-  max-width: min(76vw, 15rem);
-  max-height: 42dvh;
+  aspect-ratio: 1 / 1;
+  max-width: min(72vw, 13.5rem);
+  max-height: 40dvh;
   background: transparent;
   object-fit: contain;
   pointer-events: none;
@@ -901,6 +966,15 @@ button {
   100% {
     opacity: 1;
     pointer-events: auto;
+  }
+}
+
+@keyframes loading-screen-hide {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }
 .blog-toc a {

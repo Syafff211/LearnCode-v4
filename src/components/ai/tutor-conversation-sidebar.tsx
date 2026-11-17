@@ -1,76 +1,92 @@
 "use client";
 
-import * as React from "react";
-import { Check, History, LoaderCircle, Pencil, Plus, Search, Trash2, X } from "lucide-react";
+import {
+  History,
+  LoaderCircle,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
 
-import { Button } from "@/components/ui/button";
-import { cn, formatShortDate } from "@/lib/utils";
 import type { TutorConversation } from "@/components/ai/tutor-chat-types";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  formatConversationActivity,
+  formatConversationDisplayTitle,
+} from "@/lib/ai/tutor-ui";
+import { cn } from "@/lib/utils";
 
 export function TutorConversationSidebar({
   idPrefix,
   conversations,
   activeId,
+  lessonTitleById,
   search,
   loading,
   error,
   onSearch,
   onSelect,
   onNew,
-  onRename,
-  onDelete,
+  onOpenRename,
+  onOpenDelete,
+  onCloseDrawer,
 }: {
   idPrefix: string;
   conversations: TutorConversation[];
   activeId: string | null;
+  lessonTitleById?: Map<string, string>;
   search: string;
   loading: boolean;
   error: string | null;
   onSearch: (value: string) => void;
   onSelect: (id: string) => void;
   onNew: () => void;
-  onRename: (id: string, title: string) => Promise<boolean>;
-  onDelete: (conversation: TutorConversation) => void;
+  onOpenRename: (conversation: TutorConversation) => void;
+  onOpenDelete: (conversation: TutorConversation) => void;
+  onCloseDrawer?: () => void;
 }) {
-  const [renamingId, setRenamingId] = React.useState<string | null>(null);
-  const [renameValue, setRenameValue] = React.useState("");
-  const [savingRename, setSavingRename] = React.useState(false);
-
-  function beginRename(conversation: TutorConversation) {
-    setRenamingId(conversation.id);
-    setRenameValue(conversation.title);
-  }
-
-  function cancelRename() {
-    setRenamingId(null);
-    setRenameValue("");
-  }
-
-  async function saveRename(event: React.FormEvent<HTMLFormElement>, id: string) {
-    event.preventDefault();
-    if (savingRename || !renameValue.trim()) return;
-    setSavingRename(true);
-    const saved = await onRename(id, renameValue.trim());
-    setSavingRename(false);
-    if (saved) cancelRename();
-  }
-
   return (
-    <div className="flex h-full min-h-0 flex-col bg-surface">
-      <div className="flex items-center justify-between gap-2 border-b border-line px-3.5 py-3">
-        <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.1em] text-muted">
-          <History className="size-3.5" aria-hidden="true" />
-          Riwayat
+    <div className="flex h-full min-h-0 w-full flex-col bg-surface">
+      <div className="flex items-center justify-between gap-2 border-b border-line px-3.5 py-2.5">
+        <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.06em] text-muted">
+          <History className="size-4 text-accent-text" aria-hidden="true" />
+          <span>Riwayat</span>
         </span>
-        <Button type="button" size="sm" variant="secondary" onClick={onNew}>
-          <Plus aria-hidden="true" />
-          Baru
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Button type="button" size="sm" variant="primary" onClick={onNew}>
+            <Plus aria-hidden="true" />
+            <span>Percakapan baru</span>
+          </Button>
+          {onCloseDrawer ? (
+            <button
+              type="button"
+              onClick={onCloseDrawer}
+              aria-label="Tutup riwayat percakapan"
+              className="inline-flex size-9 items-center justify-center rounded-[6px] text-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none"
+            >
+              <X className="size-4" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="relative border-b border-line px-3 py-2.5">
-        <label htmlFor={`tutor-history-search-${idPrefix}`} className="sr-only">Cari percakapan</label>
-        <Search className="pointer-events-none absolute left-5 top-1/2 size-3.5 -translate-y-1/2 text-muted" aria-hidden="true" />
+        <label htmlFor={`tutor-history-search-${idPrefix}`} className="sr-only">
+          Cari riwayat percakapan
+        </label>
+        <Search
+          className="pointer-events-none absolute left-5.5 top-1/2 size-4 -translate-y-1/2 text-muted"
+          aria-hidden="true"
+        />
         <input
           id={`tutor-history-search-${idPrefix}`}
           type="search"
@@ -79,116 +95,125 @@ export function TutorConversationSidebar({
           placeholder="Cari judul atau isi pesan…"
           maxLength={80}
           autoComplete="off"
-          className="h-9 w-full rounded-[5px] border border-line bg-canvas pl-8 pr-8 text-xs text-ink placeholder:text-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
+          className="h-10 w-full rounded-[6px] border border-line bg-canvas pl-9 pr-9 text-sm text-ink placeholder:text-muted focus-visible:border-accent-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text/25"
         />
         {loading ? (
-          <LoaderCircle className="absolute right-5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-muted motion-reduce:animate-none" aria-label="Mencari" />
+          <LoaderCircle
+            className="absolute right-5.5 top-1/2 size-4 -translate-y-1/2 animate-spin text-muted motion-reduce:animate-none"
+            aria-label="Mencari percakapan"
+          />
         ) : search ? (
           <button
             type="button"
             aria-label="Hapus pencarian"
             onClick={() => onSearch("")}
-            className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
+            className="absolute right-4 top-1/2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-[4px] text-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
           >
-            <X className="size-3.5" aria-hidden="true" />
+            <X className="size-4" aria-hidden="true" />
           </button>
         ) : null}
       </div>
 
       {error ? (
-        <p className="mx-3 mt-2 rounded-[5px] border border-danger/25 bg-danger-soft px-2.5 py-2 text-xs text-ink-soft" role="alert">
+        <p
+          className="mx-3 mt-2.5 rounded-[6px] border border-danger/25 bg-danger-soft px-3 py-2 text-xs leading-relaxed text-ink"
+          role="alert"
+        >
           {error}
         </p>
       ) : null}
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2" aria-busy={loading}>
         {conversations.length === 0 ? (
-          <div className="px-2 py-4 text-xs leading-relaxed text-muted" role={loading ? "status" : undefined}>
+          <div
+            className="px-2.5 py-6 text-center text-xs leading-relaxed text-muted"
+            role={loading ? "status" : undefined}
+          >
             {loading
               ? "Mencari percakapan…"
               : search.trim()
-                ? "Tidak ada percakapan yang cocok dengan pencarian."
-                : "Belum ada percakapan. Mulai chat baru untuk menyimpan riwayat."}
+                ? "Tidak ada percakapan yang cocok dengan kata kunci."
+                : "Belum ada riwayat percakapan. Mulai chat baru untuk menyimpannya di akunmu."}
           </div>
         ) : (
           <ul className="space-y-1">
-            {conversations.map((conversation) => (
-              <li key={conversation.id} className="group relative">
-                {renamingId === conversation.id ? (
-                  <form onSubmit={(event) => void saveRename(event, conversation.id)} className="space-y-2 rounded-[5px] border border-line bg-canvas p-2">
-                    <label htmlFor={`rename-${idPrefix}-${conversation.id}`} className="sr-only">Nama percakapan</label>
-                    <input
-                      id={`rename-${idPrefix}-${conversation.id}`}
-                      value={renameValue}
-                      onChange={(event) => setRenameValue(event.target.value)}
-                      maxLength={80}
-                      autoFocus
-                      className="h-8 w-full rounded-[4px] border border-line bg-surface px-2 text-xs text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          cancelRename();
-                        }
-                      }}
-                    />
-                    <div className="flex justify-end gap-1">
-                      <Button type="button" size="sm" variant="ghost" onClick={cancelRename} disabled={savingRename}>
-                        Batal
-                      </Button>
-                      <Button type="submit" size="sm" disabled={!renameValue.trim() || savingRename} loading={savingRename}>
-                        <Check aria-hidden="true" />
-                        Simpan
-                      </Button>
-                    </div>
-                  </form>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => onSelect(conversation.id)}
-                      aria-current={activeId === conversation.id ? "true" : undefined}
-                      className={cn(
-                        "w-full rounded-[5px] px-2.5 py-2.5 pr-[4.6rem] text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
-                        activeId === conversation.id
-                          ? "bg-surface-2 text-ink"
-                          : "text-ink-soft hover:bg-surface-2/70",
-                      )}
-                    >
-                      <span className="block truncate text-xs font-medium">{conversation.title}</span>
-                      <span className="mt-1 block font-mono text-[9px] text-muted">
-                        {formatShortDate(conversation.updated_at)}
+            {conversations.map((conversation) => {
+              const isActive = activeId === conversation.id;
+              const lessonTitle = conversation.lesson_id
+                ? lessonTitleById?.get(conversation.lesson_id) ?? null
+                : null;
+              const displayTitle = formatConversationDisplayTitle(
+                conversation.title,
+                lessonTitle,
+              );
+
+              return (
+                <li key={conversation.id} className="group relative flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => onSelect(conversation.id)}
+                    aria-current={isActive ? "true" : undefined}
+                    title={conversation.title}
+                    className={cn(
+                      "w-full min-w-0 rounded-[6px] border py-2.5 pl-3 pr-11 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
+                      isActive
+                        ? "border-accent/35 bg-accent-soft/65 text-ink"
+                        : "border-transparent text-ink-soft hover:bg-surface-2/80 hover:text-ink",
+                    )}
+                  >
+                    <span className="flex items-center gap-2">
+                      {isActive ? (
+                        <span
+                          className="size-1.5 shrink-0 rounded-full bg-accent"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      <span className={cn("block truncate text-sm", isActive ? "font-semibold" : "font-medium")}>
+                        {displayTitle}
                       </span>
-                    </button>
-                    <div className="absolute right-1.5 top-2 flex items-center gap-0.5 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 motion-reduce:transition-none">
+                    </span>
+                    <span className="mt-1 block truncate text-xs text-muted">
+                      {formatConversationActivity(conversation.updated_at)}
+                    </span>
+                  </button>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
                       <button
                         type="button"
-                        aria-label={`Ubah nama percakapan ${conversation.title}`}
-                        title="Ubah nama"
-                        onClick={() => beginRename(conversation)}
-                        className="rounded-[4px] p-1.5 text-muted hover:bg-surface hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
+                        aria-label={`Tindakan untuk ${displayTitle}`}
+                        title="Tindakan percakapan"
+                        className={cn(
+                          "absolute right-1 inline-flex size-10 items-center justify-center rounded-[6px] text-muted transition-opacity hover:bg-surface hover:text-ink focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text motion-reduce:transition-none",
+                          "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 data-[state=open]:opacity-100",
+                        )}
                       >
-                        <Pencil className="size-3" aria-hidden="true" />
+                        <MoreHorizontal className="size-4" aria-hidden="true" />
                       </button>
-                      <button
-                        type="button"
-                        aria-label={`Hapus percakapan ${conversation.title}`}
-                        title="Hapus"
-                        onClick={() => onDelete(conversation)}
-                        className="rounded-[4px] p-1.5 text-muted hover:bg-danger-soft hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-text"
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-44">
+                      <DropdownMenuItem onSelect={() => onOpenRename(conversation)}>
+                        <Pencil className="size-4" aria-hidden="true" />
+                        <span>Ubah nama</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onSelect={() => onOpenDelete(conversation)}
+                        className="text-danger focus:bg-danger-soft focus:text-danger"
                       >
-                        <Trash2 className="size-3" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </>
-                )}
-              </li>
-            ))}
+                        <Trash2 className="size-4 text-danger" aria-hidden="true" />
+                        <span>Hapus</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
 
-      <div className="border-t border-line px-3.5 py-2 text-[10px] text-muted">
-        Hanya kamu yang dapat membuka riwayat akunmu.
+      <div className="border-t border-line px-3.5 py-2.5 text-xs leading-relaxed text-muted">
+        Riwayat percakapan hanya dapat diakses oleh akunmu.
       </div>
     </div>
   );

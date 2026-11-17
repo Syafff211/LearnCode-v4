@@ -1,5 +1,5 @@
-import { LoadingScreen } from "@/components/loading-screen";
+import { GlobalLoadingScreen } from "@/components/loading-screen";
 
 export default function MarketingLoading() {
-  return <LoadingScreen />;
+  return <GlobalLoadingScreen />;
 }

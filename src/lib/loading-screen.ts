@@ -1,55 +1,83 @@
 /**
- * Shared constants and pure rules for the LearnCode loading screen.
+ * Shared constants and pure route-gating rules for LearnCode's
+ * GlobalLoadingScreen.
  *
- * Asset priority:
- * 1. `public/loading.mp4` (`/loading.mp4`)
- * 2. `public/loading.gif` (`/loading.gif`)
- *
- * Kept free of DOM/React dependencies so media fallback and navigation gating
- * rules can be thoroughly unit tested.
+ * Asset: `public/loading.gif` (`/loading.gif`).
+ * Kept free of DOM/React dependencies so navigation gating rules can be unit tested.
  */
 
-export const LOADING_VIDEO_SRC = "/loading.mp4";
 export const LOADING_GIF_SRC = "/loading.gif";
-export const LOADING_SCREEN_BACKGROUND = "#FAF9F5";
+export const LOADING_GIF_SIZE = 420;
 
 /**
- * Delay before revealing the full-screen loading overlay so fast transitions
- * or already-cached responses never flash or blink.
+ * Reveal delay so fast or prefetched transitions never flicker.
  */
 export const DEFAULT_LOADING_DELAY_MS = 150;
 
 /**
- * Upper bound for client-tracked loading states (initial resource load or
- * client navigation) so network stalls or aborted requests cannot trap users.
+ * Fade-out duration for the managed loading overlay after navigation commits.
  */
-export const DEFAULT_LOADING_SAFETY_TIMEOUT_MS = 15_000;
+export const DEFAULT_LOADING_FADE_MS = 180;
 
-export type LoadingMediaKind = "video" | "gif" | "none";
+/**
+ * Fail-safe circuit breaker if a client navigation stalls due to a network drop
+ * or aborted server response so the overlay never locks the page indefinitely.
+ */
+export const DEFAULT_LOADING_SAFETY_TIMEOUT_MS = 12_000;
 
-export function getLoadingMediaSource(
-  kind: LoadingMediaKind,
-  {
-    videoSrc = LOADING_VIDEO_SRC,
-    gifSrc = LOADING_GIF_SRC,
-  }: { videoSrc?: string; gifSrc?: string } = {},
+export type LoadingMediaKind = "gif" | "fallback";
+
+const NON_PAGE_PATH_PREFIXES = ["/api/", "/auth/"];
+
+export function normalizePathname(pathname: string): string {
+  const trimmed = pathname.trim();
+  if (!trimmed || trimmed === "/") return "/";
+  return trimmed.replace(/\/+$/, "") || "/";
+}
+
+export type RouteTransitionInput = {
+  href: string | null | undefined;
+  currentPathname: string;
+  origin: string;
+};
+
+/**
+ * Resolves the normalized target pathname when a route transition should
+ * trigger `GlobalLoadingScreen`, or returns `null` when it should not:
+ * - external origins, non-http schemes (`mailto:`, `tel:`, `javascript:`, etc.)
+ * - API & auth handler endpoints (`/api/*`, `/auth/*`)
+ * - hash-only jumps (`#section`) or query-only updates on the same pathname
+ * - same-route transitions where pathname did not change
+ */
+export function resolveTransitionPathname(
+  input: RouteTransitionInput,
 ): string | null {
-  if (kind === "video") return videoSrc;
-  if (kind === "gif") return gifSrc;
-  return null;
-}
+  const rawHref = input.href?.trim();
+  if (!rawHref || rawHref.startsWith("#")) return null;
+  if (/^(mailto:|tel:|javascript:|data:|blob:)/i.test(rawHref)) return null;
 
-export function getNextLoadingMediaFallback(
-  current: LoadingMediaKind,
-): LoadingMediaKind {
-  if (current === "video") return "gif";
-  return "none";
-}
+  let currentUrl: URL;
+  let nextUrl: URL;
+  try {
+    currentUrl = new URL(normalizePathname(input.currentPathname), input.origin);
+    nextUrl = new URL(rawHref, currentUrl);
+  } catch {
+    return null;
+  }
 
-export function isDocumentReady(
-  readyState: DocumentReadyState | string | undefined,
-): boolean {
-  return readyState === "complete";
+  if (nextUrl.origin !== currentUrl.origin) return null;
+
+  const nextPath = normalizePathname(nextUrl.pathname);
+  if (
+    NON_PAGE_PATH_PREFIXES.some(
+      (prefix) => nextPath === prefix.slice(0, -1) || nextPath.startsWith(prefix),
+    )
+  ) {
+    return null;
+  }
+
+  const currentPath = normalizePathname(currentUrl.pathname);
+  return nextPath !== currentPath ? nextPath : null;
 }
 
 export type NavigationClickInput = {
@@ -66,13 +94,6 @@ export type NavigationClickInput = {
   altKey?: boolean;
 };
 
-const NON_PAGE_PATH_PREFIXES = ["/api/", "/auth/"];
-
-/**
- * Determines whether clicking an anchor should trigger a navigation loading
- * indicator. Ignores modified clicks, external origins, downloads, hash-only
- * jumps, API/auth download endpoints, and links to the current route.
- */
 export function shouldShowNavigationLoading(input: NavigationClickInput): boolean {
   if (input.defaultPrevented) return false;
   if (typeof input.button === "number" && input.button !== 0) return false;
@@ -84,31 +105,25 @@ export function shouldShowNavigationLoading(input: NavigationClickInput): boolea
   const target = input.target?.trim().toLowerCase();
   if (target && target !== "_self") return false;
 
-  const rawHref = input.href?.trim();
-  if (!rawHref || rawHref.startsWith("#")) return false;
-  if (/^(mailto:|tel:|javascript:|data:|blob:)/i.test(rawHref)) return false;
-
-  let nextUrl: URL;
-  let currentUrl: URL;
+  let currentPathname = "/";
   try {
-    currentUrl = new URL(input.currentHref, input.origin);
-    nextUrl = new URL(rawHref, currentUrl);
+    currentPathname = new URL(input.currentHref, input.origin).pathname;
   } catch {
     return false;
   }
 
-  if (nextUrl.origin !== currentUrl.origin) return false;
-  if (
-    NON_PAGE_PATH_PREFIXES.some(
-      (prefix) =>
-        nextUrl.pathname === prefix.slice(0, -1) ||
-        nextUrl.pathname.startsWith(prefix),
-    )
-  ) {
-    return false;
-  }
+  return (
+    resolveTransitionPathname({
+      href: input.href,
+      currentPathname,
+      origin: input.origin,
+    }) !== null
+  );
+}
 
-  const nextRoute = `${nextUrl.pathname}${nextUrl.search}`;
-  const currentRoute = `${currentUrl.pathname}${currentUrl.search}`;
-  return nextRoute !== currentRoute;
+export function isNavigationErrorAbort(message: string | undefined): boolean {
+  if (!message) return false;
+  return /ChunkLoadError|Loading chunk|Failed to fetch|NetworkError|Load failed|cancelled/i.test(
+    message,
+  );
 }
