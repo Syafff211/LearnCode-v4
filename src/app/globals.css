@@ -856,6 +856,54 @@ button {
   to { opacity: 0; }
 }
 
+/* Official loading screen. Sits above normal UI & promotion popups (z-70)
+   and below the landing intro video (z-90) and skip link (z-100). */
+.loading-screen-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background-color: #faf9f5;
+}
+
+.loading-screen-overlay[data-contained="true"] {
+  position: absolute;
+}
+
+.loading-screen-overlay[data-delayed="true"] {
+  opacity: 0;
+  pointer-events: none;
+  animation: loading-screen-reveal 160ms ease-out var(--loading-delay, 150ms) forwards;
+}
+
+.loading-screen-media {
+  display: block;
+  width: clamp(8.5rem, 26vw, 15rem);
+  height: auto;
+  max-width: min(76vw, 15rem);
+  max-height: 42dvh;
+  background: transparent;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+@keyframes loading-screen-reveal {
+  0% {
+    opacity: 0;
+    pointer-events: none;
+  }
+  1% {
+    pointer-events: auto;
+  }
+  100% {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .blog-toc a {
   color: var(--lc-muted);
   text-decoration: none;

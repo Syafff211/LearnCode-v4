@@ -115,7 +115,7 @@ export function StorageImageUpload({
       <p id={`${id}-help`} className="text-[11px] leading-relaxed text-muted">{helper}</p>
       {busy && progress ? (
         <div className="flex items-center gap-2" aria-live="polite">
-          <LoaderCircle className="size-3.5 animate-spin text-accent-text" aria-hidden="true" />
+          <LoaderCircle className="size-3.5 animate-spin motion-reduce:animate-none text-accent-text" aria-hidden="true" />
           <div className="min-w-0 flex-1">
             <div className="mb-1 flex justify-between gap-3 text-[10px] text-muted">
               <span>Mengunggah gambar WebP…</span>
