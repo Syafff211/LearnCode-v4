@@ -16,13 +16,10 @@ import BlogLayout, {
 } from "@/app/(marketing)/blog/layout";
 import { BlogAds } from "@/components/blog/blog-ads";
 import { BlogReferralBanner } from "@/components/blog/blog-referral-banner";
-import { BlogSideAd } from "@/components/blog/blog-side-ad";
 import {
   HILLTOPADS_BLOG_SCRIPT_SRC,
   HILLTOPADS_BLOG_ZONES,
   HILLTOPADS_BLOG_ZONE_ID,
-  HILLTOPADS_LEFT_BANNER_SCRIPT_SRC,
-  HILLTOPADS_LEFT_BANNER_ZONE_ID,
   HILLTOPADS_POPUNDER_SCRIPT_SRC,
   HILLTOPADS_POPUNDER_ZONE_ID,
   HILLTOPADS_REFERRAL_BANNERS,
@@ -30,9 +27,6 @@ import {
   HILLTOPADS_REFERRAL_BANNER_WIDTH,
   HILLTOPADS_REFERRAL_URL,
   HILLTOPADS_REFERRER_POLICY,
-  HILLTOPADS_RIGHT_BANNER_SCRIPT_SRC,
-  HILLTOPADS_RIGHT_BANNER_ZONE_ID,
-  HILLTOPADS_SIDE_BANNERS,
   createHilltopAdsScript,
   isBlogAdsRoute,
   normalizeBlogAdsPathname,
@@ -180,73 +174,7 @@ describe("HilltopAds script builder and blog-only rendering", () => {
     );
     expect(html).toContain("<article>Konten artikel</article>");
     expect(html).toContain(`data-hilltopads-host="${HILLTOPADS_BLOG_ZONE_ID}"`);
-    expect(html).toContain('data-hilltopads-side-slot="left"');
-    expect(html).toContain(`data-hilltopads-zone="${HILLTOPADS_LEFT_BANNER_ZONE_ID}"`);
-    expect(html).toContain('data-hilltopads-side-slot="right"');
-    expect(html).toContain(`data-hilltopads-zone="${HILLTOPADS_RIGHT_BANNER_ZONE_ID}"`);
-  });
-
-  it("builds exact HilltopAds 300x250 side banner scripts and isolates BlogSideAd to /blog", () => {
-    expect(HILLTOPADS_LEFT_BANNER_ZONE_ID).toBe("7656005");
-    expect(HILLTOPADS_LEFT_BANNER_SCRIPT_SRC).toBe(
-      "//quarrelsomebitter.com/b.XhVvs/d/Grl/0yYCWKcj/xe/mJ9-ulZhUVlnkZPaTvcm2/NsTuYkwjMXDUUctxNkz/YW1nN/jcAGwOO_QD",
-    );
-    expect(HILLTOPADS_RIGHT_BANNER_ZONE_ID).toBe("7656021");
-    expect(HILLTOPADS_RIGHT_BANNER_SCRIPT_SRC).toBe(
-      "//quarrelsomebitter.com/b.XyV/s/d/GQla0tY/W/cz/EelmU9quiZ/UOlrkFPcTzc/2iNvT/YOwwM_j/Elt/N_zzYM1UNEjgAryJNRQY",
-    );
-
-    const makeFakeDoc = () => {
-      const fakeScript = {
-        dataset: {} as DOMStringMap,
-        src: "",
-        async: false,
-        referrerPolicy: "",
-      } as unknown as HilltopAdsScriptElement;
-      return {
-        createElement: vi.fn(() => fakeScript),
-      } as unknown as Document;
-    };
-
-    const leftScript = createHilltopAdsScript(
-      makeFakeDoc(),
-      {},
-      HILLTOPADS_SIDE_BANNERS.left,
-    );
-    expect(leftScript.src).toBe(HILLTOPADS_LEFT_BANNER_SCRIPT_SRC);
-    expect(leftScript.dataset.hilltopadsZone).toBe("7656005");
-    expect(leftScript.referrerPolicy).toBe("no-referrer-when-downgrade");
-
-    const rightScript = createHilltopAdsScript(
-      makeFakeDoc(),
-      {},
-      HILLTOPADS_SIDE_BANNERS.right,
-    );
-    expect(rightScript.src).toBe(HILLTOPADS_RIGHT_BANNER_SCRIPT_SRC);
-    expect(rightScript.dataset.hilltopadsZone).toBe("7656021");
-    expect(rightScript.referrerPolicy).toBe("no-referrer-when-downgrade");
-
-    mockPathname.mockReturnValue("/blog");
-    const leftHtml = renderToStaticMarkup(
-      React.createElement(BlogSideAd, { side: "left" }),
-    );
-    const rightHtml = renderToStaticMarkup(
-      React.createElement(BlogSideAd, { side: "right" }),
-    );
-    expect(leftHtml).toContain('data-hilltopads-side-slot="left"');
-    expect(leftHtml).toContain('data-hilltopads-zone="7656005"');
-    expect(rightHtml).toContain('data-hilltopads-side-slot="right"');
-    expect(rightHtml).toContain('data-hilltopads-zone="7656021"');
-
-    for (const path of ["/", "/courses", "/ai-tutor", "/playground", "/admin/blog"]) {
-      mockPathname.mockReturnValue(path);
-      expect(
-        renderToStaticMarkup(React.createElement(BlogSideAd, { side: "left" })),
-      ).toBe("");
-      expect(
-        renderToStaticMarkup(React.createElement(BlogSideAd, { side: "right" })),
-      ).toBe("");
-    }
+    expect(html).not.toContain("data-hilltopads-side-slot");
   });
 
   it("sets Referrer-Policy to no-referrer-when-downgrade only for /blog headers in next.config.ts", async () => {
