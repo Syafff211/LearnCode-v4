@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { BlogCategoryPills } from "@/components/blog/blog-category-pills";
 import { BlogPostCard } from "@/components/blog/blog-post-card";
+import { BlogReferralBanner } from "@/components/blog/blog-referral-banner";
 import { JsonLd } from "@/components/seo/json-ld";
 import {
   getPublicBlogCategories,
@@ -122,6 +123,7 @@ export default async function BlogCategoryPage({ params }: PageProps) {
         </div>
       </section>
       <section className="container-lc py-9 sm:py-12" aria-label={`Artikel kategori ${category.name}`}>
+        <BlogReferralBanner className="mb-8" />
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {posts.map((post) => <BlogPostCard key={post.id} post={post} />)}
         </div>

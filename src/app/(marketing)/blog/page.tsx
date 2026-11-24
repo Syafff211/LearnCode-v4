@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { BlogCategoryPills } from "@/components/blog/blog-category-pills";
 import { BlogPostCard } from "@/components/blog/blog-post-card";
+import { BlogReferralBanner } from "@/components/blog/blog-referral-banner";
 import { JsonLd } from "@/components/seo/json-ld";
 import { getPublicBlogCategories, getPublishedBlogPosts } from "@/lib/data/blog";
 import { canonicalUrl } from "@/lib/seo";
@@ -96,6 +97,7 @@ export default async function BlogIndexPage() {
       </section>
 
       <section className="container-lc py-9 sm:py-12" aria-label="Artikel blog">
+        <BlogReferralBanner className="mb-8" />
         {featured ? (
           <>
             <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">

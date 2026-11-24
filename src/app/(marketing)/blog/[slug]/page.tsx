@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, ArrowUpRight, BookOpen, Mail, MessageCircle, Share2 } from "lucide-react";
 
 import { BlogPostCard } from "@/components/blog/blog-post-card";
+import { BlogReferralBanner } from "@/components/blog/blog-referral-banner";
 import { JsonLd } from "@/components/seo/json-ld";
 import { blogAuthorName, formatBlogDate } from "@/lib/blog-utils";
 import {
@@ -228,6 +229,8 @@ export default async function BlogPostPage({ params }: PageProps) {
               </a>
             </div>
           </section>
+
+          <BlogReferralBanner className="mt-7" />
 
           {post.related_course ? (
             <aside className="mt-7 flex flex-wrap items-center justify-between gap-4 rounded-[8px] border border-accent/20 bg-accent-soft/55 p-4 sm:p-5" aria-label="Kursus terkait">

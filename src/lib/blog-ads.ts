@@ -5,6 +5,48 @@ export const HILLTOPADS_BLOG_SCRIPT_SRC =
 
 export const HILLTOPADS_REFERRER_POLICY = "no-referrer-when-downgrade" as const;
 
+export const HILLTOPADS_REFERRAL_URL =
+  "https://hilltopads.com/id?ref=415472" as const;
+
+export const HILLTOPADS_REFERRAL_BANNER_WIDTH = 728;
+export const HILLTOPADS_REFERRAL_BANNER_HEIGHT = 90;
+
+export type HilltopAdsReferralBanner = {
+  id: string;
+  label: string;
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+};
+
+export const HILLTOPADS_REFERRAL_BANNERS: readonly HilltopAdsReferralBanner[] = [
+  {
+    id: "huge_income",
+    label: "Huge Income",
+    src: "https://static.hilltopads.com/other/banners/pub/huge_income/728x90.gif?v=1795523369",
+    alt: "HilltopAds — Dapatkan penghasilan maksimal dari trafik situs Anda",
+    width: HILLTOPADS_REFERRAL_BANNER_WIDTH,
+    height: HILLTOPADS_REFERRAL_BANNER_HEIGHT,
+  },
+  {
+    id: "get_high_ecpm",
+    label: "High eCPM & Profit",
+    src: "https://static.hilltopads.com/other/banners/pub/get_high_ecpm/728x90.gif?v=1795523369",
+    alt: "HilltopAds — Have good traffic? Get high eCPM and profit!",
+    width: HILLTOPADS_REFERRAL_BANNER_WIDTH,
+    height: HILLTOPADS_REFERRAL_BANNER_HEIGHT,
+  },
+  {
+    id: "make_big_money",
+    label: "Pembayaran Global",
+    src: "https://static.hilltopads.com/other/banners/pub/make_big_money/728x90.gif?v=1795523369",
+    alt: "HilltopAds — Pembayaran USDT, Bitcoin, PayPal, Paxum, Webmoney, dan Wire Transfer",
+    width: HILLTOPADS_REFERRAL_BANNER_WIDTH,
+    height: HILLTOPADS_REFERRAL_BANNER_HEIGHT,
+  },
+];
+
 export type HilltopAdsScriptElement = HTMLScriptElement & {
   settings?: Record<string, unknown>;
 };

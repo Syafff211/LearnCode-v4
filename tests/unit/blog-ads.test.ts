@@ -15,9 +15,14 @@ import BlogLayout, {
   metadata as blogLayoutMetadata,
 } from "@/app/(marketing)/blog/layout";
 import { BlogAds } from "@/components/blog/blog-ads";
+import { BlogReferralBanner } from "@/components/blog/blog-referral-banner";
 import {
   HILLTOPADS_BLOG_SCRIPT_SRC,
   HILLTOPADS_BLOG_ZONE_ID,
+  HILLTOPADS_REFERRAL_BANNERS,
+  HILLTOPADS_REFERRAL_BANNER_HEIGHT,
+  HILLTOPADS_REFERRAL_BANNER_WIDTH,
+  HILLTOPADS_REFERRAL_URL,
   HILLTOPADS_REFERRER_POLICY,
   createHilltopAdsScript,
   isBlogAdsRoute,
@@ -153,5 +158,46 @@ describe("HilltopAds script builder and blog-only rendering", () => {
       key: "Referrer-Policy",
       value: "no-referrer-when-downgrade",
     });
+  });
+});
+
+describe("HilltopAds 728x90 referral banner", () => {
+  beforeEach(() => {
+    mockPathname.mockReturnValue("/blog");
+  });
+
+  it("defines all three 728x90 referral banners pointing to ref=415472", () => {
+    expect(HILLTOPADS_REFERRAL_URL).toBe("https://hilltopads.com/id?ref=415472");
+    expect(HILLTOPADS_REFERRAL_BANNER_WIDTH).toBe(728);
+    expect(HILLTOPADS_REFERRAL_BANNER_HEIGHT).toBe(90);
+    expect(HILLTOPADS_REFERRAL_BANNERS.map((banner) => banner.src)).toEqual([
+      "https://static.hilltopads.com/other/banners/pub/huge_income/728x90.gif?v=1795523369",
+      "https://static.hilltopads.com/other/banners/pub/get_high_ecpm/728x90.gif?v=1795523369",
+      "https://static.hilltopads.com/other/banners/pub/make_big_money/728x90.gif?v=1795523369",
+    ]);
+  });
+
+  it("renders BlogReferralBanner only on public /blog routes with no-referrer-when-downgrade", () => {
+    mockPathname.mockReturnValue("/blog");
+    const blogHtml = renderToStaticMarkup(React.createElement(BlogReferralBanner));
+    expect(blogHtml).toContain('data-hilltopads-referral-slot="728x90"');
+    expect(blogHtml).toContain(`href="${HILLTOPADS_REFERRAL_URL}"`);
+    expect(blogHtml).toContain('rel="noopener sponsored"');
+    expect(blogHtml).toContain('referrerPolicy="no-referrer-when-downgrade"');
+    expect(blogHtml).toContain(
+      "https://static.hilltopads.com/other/banners/pub/huge_income/728x90.gif?v=1795523369",
+    );
+    expect(blogHtml).toContain('width="728"');
+    expect(blogHtml).toContain('height="90"');
+
+    mockPathname.mockReturnValue("/blog/category/html");
+    expect(renderToStaticMarkup(React.createElement(BlogReferralBanner))).toContain(
+      'data-hilltopads-referral-slot="728x90"',
+    );
+
+    for (const path of ["/", "/courses", "/ai-tutor", "/playground", "/admin/blog"]) {
+      mockPathname.mockReturnValue(path);
+      expect(renderToStaticMarkup(React.createElement(BlogReferralBanner))).toBe("");
+    }
   });
 });
