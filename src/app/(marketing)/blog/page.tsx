@@ -100,12 +100,12 @@ export default async function BlogIndexPage() {
         <BlogReferralBanner className="mb-8" />
         {featured ? (
           <>
-            <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr] xl:grid-cols-2 2xl:grid-cols-[1.25fr_0.75fr]">
+            <div className="grid gap-4 lg:grid-cols-[1.25fr_0.75fr]">
               <BlogPostCard post={featured} featured />
               {rest[0] ? <BlogPostCard post={rest[0]} /> : null}
             </div>
             {rest.length > 1 ? (
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {rest.slice(1).map((post) => <BlogPostCard key={post.id} post={post} />)}
               </div>
             ) : null}

@@ -8,21 +8,9 @@ export const HILLTOPADS_POPUNDER_ZONE_ID = "7655861";
 export const HILLTOPADS_POPUNDER_SCRIPT_SRC =
   "//faithfuloccasion.com/chDg9a6.bV2k5dlmSaW/Q/9HNKzxY/1/NHTTgc2/MBSn0-3tN/jpU/1HODDVY/1D";
 
-export const HILLTOPADS_LEFT_BANNER_ZONE_ID = "7656005";
-
-export const HILLTOPADS_LEFT_BANNER_SCRIPT_SRC =
-  "//quarrelsomebitter.com/b.XhVvs/d/Grl/0yYCWKcj/xe/mJ9-ulZhUVlnkZPaTvcm2/NsTuYkwjMXDUUctxNkz/YW1nN/jcAGwOO_QD";
-
-export const HILLTOPADS_RIGHT_BANNER_ZONE_ID = "7656021";
-
-export const HILLTOPADS_RIGHT_BANNER_SCRIPT_SRC =
-  "//quarrelsomebitter.com/b.XyV/s/d/GQla0tY/W/cz/EelmU9quiZ/UOlrkFPcTzc/2iNvT/YOwwM_j/Elt/N_zzYM1UNEjgAryJNRQY";
-
-export const HILLTOPADS_SIDE_RAIL_MEDIA_QUERY = "(min-width: 1280px)" as const;
-
 export type HilltopAdsZoneConfig = {
   zoneId: string;
-  kind: "multitag" | "popunder" | "banner-300x250";
+  kind: "multitag" | "popunder";
   src: string;
 };
 
@@ -38,36 +26,6 @@ export const HILLTOPADS_BLOG_ZONES: readonly HilltopAdsZoneConfig[] = [
     src: HILLTOPADS_POPUNDER_SCRIPT_SRC,
   },
 ];
-
-export type HilltopAdsSidePosition = "left" | "right";
-
-export type HilltopAdsSideBannerConfig = HilltopAdsZoneConfig & {
-  side: HilltopAdsSidePosition;
-  width: number;
-  height: number;
-};
-
-export const HILLTOPADS_SIDE_BANNERS: Record<
-  HilltopAdsSidePosition,
-  HilltopAdsSideBannerConfig
-> = {
-  left: {
-    side: "left",
-    zoneId: HILLTOPADS_LEFT_BANNER_ZONE_ID,
-    kind: "banner-300x250",
-    src: HILLTOPADS_LEFT_BANNER_SCRIPT_SRC,
-    width: 300,
-    height: 250,
-  },
-  right: {
-    side: "right",
-    zoneId: HILLTOPADS_RIGHT_BANNER_ZONE_ID,
-    kind: "banner-300x250",
-    src: HILLTOPADS_RIGHT_BANNER_SCRIPT_SRC,
-    width: 300,
-    height: 250,
-  },
-};
 
 export const HILLTOPADS_REFERRER_POLICY = "no-referrer-when-downgrade" as const;
 
