@@ -51,6 +51,18 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      {
+        source: "/blog",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer-when-downgrade" },
+        ],
+      },
+      {
+        source: "/blog/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer-when-downgrade" },
+        ],
+      },
     ];
   },
 };
