@@ -18,7 +18,10 @@ import { BlogAds } from "@/components/blog/blog-ads";
 import { BlogReferralBanner } from "@/components/blog/blog-referral-banner";
 import {
   HILLTOPADS_BLOG_SCRIPT_SRC,
+  HILLTOPADS_BLOG_ZONES,
   HILLTOPADS_BLOG_ZONE_ID,
+  HILLTOPADS_POPUNDER_SCRIPT_SRC,
+  HILLTOPADS_POPUNDER_ZONE_ID,
   HILLTOPADS_REFERRAL_BANNERS,
   HILLTOPADS_REFERRAL_BANNER_HEIGHT,
   HILLTOPADS_REFERRAL_BANNER_WIDTH,
@@ -106,15 +109,50 @@ describe("HilltopAds script builder and blog-only rendering", () => {
     expect(script.dataset.hilltopadsZone).toBe(HILLTOPADS_BLOG_ZONE_ID);
   });
 
-  it("renders BlogAds container on /blog routes and stays empty elsewhere", () => {
+  it("builds the exact HilltopAds popunder script attributes for zone 7655861", () => {
+    const fakeScript = {
+      dataset: {} as DOMStringMap,
+      src: "",
+      async: false,
+      referrerPolicy: "",
+    } as unknown as HilltopAdsScriptElement;
+
+    const fakeDoc = {
+      createElement: vi.fn((tag: string) => {
+        expect(tag).toBe("script");
+        return fakeScript;
+      }),
+    } as unknown as Document;
+
+    const popunderZone = HILLTOPADS_BLOG_ZONES.find(
+      (zone) => zone.zoneId === HILLTOPADS_POPUNDER_ZONE_ID,
+    );
+    expect(popunderZone).toBeDefined();
+
+    const script = createHilltopAdsScript(fakeDoc, {}, popunderZone);
+    expect(script.settings).toEqual({});
+    expect(script.src).toBe(
+      "//faithfuloccasion.com/chDg9a6.bV2k5dlmSaW/Q/9HNKzxY/1/NHTTgc2/MBSn0-3tN/jpU/1HODDVY/1D",
+    );
+    expect(script.src).toBe(HILLTOPADS_POPUNDER_SCRIPT_SRC);
+    expect(script.async).toBe(true);
+    expect(script.referrerPolicy).toBe("no-referrer-when-downgrade");
+    expect(script.dataset.hilltopadsZone).toBe(HILLTOPADS_POPUNDER_ZONE_ID);
+  });
+
+  it("renders BlogAds container with both zones on /blog routes and stays empty elsewhere", () => {
     mockPathname.mockReturnValue("/blog");
-    expect(renderToStaticMarkup(React.createElement(BlogAds))).toContain(
-      `data-hilltopads-host="${HILLTOPADS_BLOG_ZONE_ID}"`,
+    const blogMarkup = renderToStaticMarkup(React.createElement(BlogAds));
+    expect(blogMarkup).toContain(`data-hilltopads-host="${HILLTOPADS_BLOG_ZONE_ID}"`);
+    expect(blogMarkup).toContain(
+      `data-hilltopads-zones="${HILLTOPADS_BLOG_ZONE_ID},${HILLTOPADS_POPUNDER_ZONE_ID}"`,
     );
 
     mockPathname.mockReturnValue("/blog/tutorial-css");
-    expect(renderToStaticMarkup(React.createElement(BlogAds))).toContain(
-      `data-hilltopads-host="${HILLTOPADS_BLOG_ZONE_ID}"`,
+    const postMarkup = renderToStaticMarkup(React.createElement(BlogAds));
+    expect(postMarkup).toContain(`data-hilltopads-host="${HILLTOPADS_BLOG_ZONE_ID}"`);
+    expect(postMarkup).toContain(
+      `data-hilltopads-zones="${HILLTOPADS_BLOG_ZONE_ID},${HILLTOPADS_POPUNDER_ZONE_ID}"`,
     );
 
     for (const path of ["/", "/courses", "/ai-tutor", "/playground", "/admin/blog"]) {
