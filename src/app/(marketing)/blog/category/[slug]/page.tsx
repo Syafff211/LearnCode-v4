@@ -124,7 +124,7 @@ export default async function BlogCategoryPage({ params }: PageProps) {
       </section>
       <section className="container-lc py-9 sm:py-12" aria-label={`Artikel kategori ${category.name}`}>
         <BlogReferralBanner className="mb-8" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-2 2xl:grid-cols-3">
           {posts.map((post) => <BlogPostCard key={post.id} post={post} />)}
         </div>
       </section>
