@@ -6,13 +6,11 @@ import { useEffect, useRef } from "react";
 import {
   HILLTOPADS_BLOG_ZONES,
   HILLTOPADS_BLOG_ZONE_ID,
+  cleanupHilltopAdsOnRouteExit,
   createHilltopAdsScript,
   isBlogAdsRoute,
+  markHilltopAdsExecuted,
 } from "@/lib/blog-ads";
-
-type HilltopAdsWindow = Window & {
-  __lcHilltopAdsExecuted?: boolean;
-};
 
 export function BlogAds() {
   const pathname = usePathname();
@@ -33,7 +31,7 @@ export function BlogAds() {
         "load",
         () => {
           if (isBlogAdsRoute(window.location.pathname)) {
-            (window as HilltopAdsWindow).__lcHilltopAdsExecuted = true;
+            markHilltopAdsExecuted();
           }
         },
         { once: true },
@@ -43,22 +41,7 @@ export function BlogAds() {
 
     return () => {
       if (isBlogAdsRoute(window.location.pathname)) return;
-
-      document
-        .querySelectorAll("script[data-hilltopads-zone]")
-        .forEach((node) => node.remove());
-
-      const win = window as HilltopAdsWindow;
-      if (win.__lcHilltopAdsExecuted) {
-        win.__lcHilltopAdsExecuted = false;
-        try {
-          // HilltopAds MultiTag/Popunder scripts register global listeners/DOM outside this
-          // component; reload once on leaving /blog so non-blog routes stay completely clean.
-          window.location.replace(window.location.href);
-        } catch {
-          // Ignore navigation errors in synthetic test environments.
-        }
-      }
+      cleanupHilltopAdsOnRouteExit();
     };
   }, [pathname]);
 
