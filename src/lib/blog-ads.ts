@@ -3,6 +3,30 @@ export const HILLTOPADS_BLOG_ZONE_ID = "7655493";
 export const HILLTOPADS_BLOG_SCRIPT_SRC =
   "//quarrelsomebitter.com/baXjVMsqd.GFlI0KYkWdcK/deImh9qu/ZrUJlckYP/TYc_2yNnTnU/0SOmTRMAtTNOzJYV1pN_T-Qv5yNtwv";
 
+export const HILLTOPADS_POPUNDER_ZONE_ID = "7655861";
+
+export const HILLTOPADS_POPUNDER_SCRIPT_SRC =
+  "//faithfuloccasion.com/chDg9a6.bV2k5dlmSaW/Q/9HNKzxY/1/NHTTgc2/MBSn0-3tN/jpU/1HODDVY/1D";
+
+export type HilltopAdsZoneConfig = {
+  zoneId: string;
+  kind: "multitag" | "popunder";
+  src: string;
+};
+
+export const HILLTOPADS_BLOG_ZONES: readonly HilltopAdsZoneConfig[] = [
+  {
+    zoneId: HILLTOPADS_BLOG_ZONE_ID,
+    kind: "multitag",
+    src: HILLTOPADS_BLOG_SCRIPT_SRC,
+  },
+  {
+    zoneId: HILLTOPADS_POPUNDER_ZONE_ID,
+    kind: "popunder",
+    src: HILLTOPADS_POPUNDER_SCRIPT_SRC,
+  },
+];
+
 export const HILLTOPADS_REFERRER_POLICY = "no-referrer-when-downgrade" as const;
 
 export const HILLTOPADS_REFERRAL_URL =
@@ -75,12 +99,16 @@ export function isBlogAdsRoute(pathname: string | null | undefined): boolean {
 export function createHilltopAdsScript(
   doc: Document,
   settings: Record<string, unknown> = {},
+  zone: Pick<HilltopAdsZoneConfig, "zoneId" | "src"> = {
+    zoneId: HILLTOPADS_BLOG_ZONE_ID,
+    src: HILLTOPADS_BLOG_SCRIPT_SRC,
+  },
 ): HilltopAdsScriptElement {
   const script = doc.createElement("script") as HilltopAdsScriptElement;
   script.settings = settings;
-  script.src = HILLTOPADS_BLOG_SCRIPT_SRC;
+  script.src = zone.src;
   script.async = true;
   script.referrerPolicy = HILLTOPADS_REFERRER_POLICY;
-  script.dataset.hilltopadsZone = HILLTOPADS_BLOG_ZONE_ID;
+  script.dataset.hilltopadsZone = zone.zoneId;
   return script;
 }
